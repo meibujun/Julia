@@ -1,0 +1,7 @@
+# Development and Testing Dependencies
+pytest
+
+# Core Dependencies (also needed for tests to run the library)
+numpy
+pandas
+scipy
