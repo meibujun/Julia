@@ -1,0 +1,6 @@
+Ind,Sire,Dam
+id1,0,0
+id2,0,0
+id3,id1,id2
+id4,id1,0
+id5,id3,id4
