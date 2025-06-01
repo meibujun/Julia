@@ -221,20 +221,59 @@ def sample_other_random_effect_variances_py(mme: MME_py):
     for i, rec in enumerate(mme.random_effect_components):
         if not rec.variance_prior.estimate_variance: continue
 
-        # Placeholder for sum_sq_u: u' Vinv u
-        # This needs robust mapping from solution_vector to u for this effect `rec`
-        # and application of rec.Vinv_obj.
-        num_levels_effect = rec.num_cols_in_LHS if hasattr(rec, 'num_cols_in_LHS') and rec.num_cols_in_LHS > 0 else 10 # Default if not mapped
+        # This requires mme.effect_slices_in_mme to be correctly populated by the MME builder
+        # and mme.solution_vector to contain the current estimates for all effects.
 
-        # Conceptual: extract u_current from mme.solution_vector using rec.start_col_in_LHS and num_cols_in_LHS
-        # u_current = mme.solution_vector[rec.start_col_in_LHS : rec.start_col_in_LHS + num_cols_in_LHS]
-        # if rec.Vinv_obj is not None:
-        #     sum_sq_u = u_current.T @ rec.Vinv_obj @ u_current
-        # else: # IID
-        #     sum_sq_u = np.dot(u_current, u_current)
-        # For now, using a dummy sum_sq_u
-        u_dummy_solutions = np.random.normal(0, np.sqrt(rec.variance_prior.value if rec.variance_prior.value is not None and rec.variance_prior.value > 0 else 1.0), num_levels_effect)
-        sum_sq_u = np.dot(u_dummy_solutions, u_dummy_solutions)
+        sum_sq_u = 0.0
+        num_levels_effect = 0
+
+        # Try to find the slice for this random effect component.
+        # The component 'rec' itself might store its mapping if MME builder sets it.
+        # Or we search by a conventional name in mme.effect_slices_in_mme.
+        # This is still an area needing robust definition by the MME builder.
+
+        # Conceptual: find effect_slice for 'rec'
+        # For example, if rec.term_array = ["y1:animal"], its key in effect_slices_in_mme might be "y1:animal".
+        # This assumes each RandomEffectComponent corresponds to one main entry in effect_slices_in_mme
+        # which defines its block in solution_vector.
+
+        # For this example, let's assume rec has attributes like:
+        # rec.slice_in_mme = slice(start, end) # Set by MME builder
+        # rec.Vinv_obj = K_inv (e.g. A_inv, H_inv, or identity for IID if not part of X_fixed)
+
+        effect_slice = None
+        if hasattr(rec, 'slice_in_mme') and rec.slice_in_mme is not None:
+            effect_slice = rec.slice_in_mme
+        elif mme.effect_slices_in_mme: # Fallback: try to find by name (less robust)
+            # This needs a consistent naming convention. Assume rec.term_array[0] or rec.name attribute.
+            key_to_find = rec.term_array[0] if rec.term_array else (rec.name if hasattr(rec, 'name') else None)
+            if key_to_find and key_to_find in mme.effect_slices_in_mme:
+                effect_slice = mme.effect_slices_in_mme[key_to_find]
+
+        if effect_slice:
+            u_current = mme.solution_vector[effect_slice]
+            num_levels_effect = len(u_current)
+
+            if rec.Vinv_obj is not None: # e.g., A_inv, H_inv
+                # Ensure Vinv_obj is conformable with u_current
+                if rec.Vinv_obj.shape == (num_levels_effect, num_levels_effect):
+                    # sum_sq_u = u_current.T @ rec.Vinv_obj @ u_current # If Vinv_obj is sparse, use sparse methods
+                    if hasattr(rec.Vinv_obj, 'dot'): # Scipy sparse matrix
+                        sum_sq_u = u_current.T @ rec.Vinv_obj.dot(u_current)
+                    else: # Numpy array
+                        sum_sq_u = u_current.T @ rec.Vinv_obj @ u_current
+                else:
+                    print(f"Warning: Vinv shape mismatch for RE {rec.term_array}. Using u'u.")
+                    sum_sq_u = np.dot(u_current, u_current) # Fallback to IID like for sum of squares
+            else: # IID effect (Vinv is Identity)
+                sum_sq_u = np.dot(u_current, u_current)
+        else:
+            # Fallback to placeholder if effect slice not found (indicates MME builder issue)
+            print(f"Warning: Could not map random effect {rec.term_array} to solution vector for SSE calculation. Using placeholder SSE.")
+            num_levels_effect = rec.variance_prior.df # Use prior df to avoid div by zero if levels=0
+            u_dummy_solutions = np.random.normal(0, np.sqrt(rec.variance_prior.value if rec.variance_prior.value is not None and rec.variance_prior.value > 0 else 1.0), int(num_levels_effect) if num_levels_effect > 0 else 10)
+            sum_sq_u = np.dot(u_dummy_solutions, u_dummy_solutions)
+
 
         prior = rec.variance_prior
         posterior_df = prior.df + num_levels_effect
