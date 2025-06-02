@@ -317,30 +317,3 @@ def run_mcmc_py(mme: MME_py, df_phenotypes: pd.DataFrame, mcmc_settings: Dict):
     print("MCMC run completed.")
     return mme.posterior_means, mme.posterior_samples
 
-```
-
-This creates `mcmc_engine.py` with:
--   A placeholder `MME_py` (it should ideally be imported and augmented from `model_components.py`).
--   `_construct_mme_lhs_rhs_py` function: Placeholder for MME construction logic. It's highly simplified, especially for multi-trait, as correct $R_{eff}^{-1}$ (Julia's `Ri`) is complex. The `addVinv` part is also conceptual.
--   `sample_location_parameters_py`: Implements a single-iteration Gibbs sampler for location parameters based on the constructed MME.
--   Placeholders for other sampling functions (`sample_residual_variance_py`, specific marker effect samplers, etc.).
--   `run_mcmc_py`: Main MCMC orchestration loop.
-    -   Initializes `y_corrected` conceptually.
-    -   Loops through iterations, calling placeholder sampling functions in order.
-    -   Includes logic for storing posterior samples and calculating means (basic).
-
-**Self-Correction/Refinements during thought process:**
-1.  **`MME_py` State**: The Julia `mme` object is heavily mutated. For Python, it's cleaner if `run_mcmc_py` manages an `MCMCState` object that holds current parameter estimates, while `MME_py` (from `model_components.py`) holds the static model definition. However, to closely follow the Julia structure initially, I've made `run_mcmc_py` operate directly on the `MME_py` object, assuming it will be augmented to store all necessary current states (like `solution_vector`, current VC estimates, `y_corrected`, etc.). I've added some of these to the placeholder `MME_py` here.
-2.  **`y_corrected` Handling**: The sequence of calculating and updating `y_corrected` is critical.
-    *   For sampling marker effects: `y_corr_for_markers = y_obs - (fixed_effects + non_marker_random_effects)`.
-    *   Marker effect samplers update `y_corr_for_markers` internally (by subtracting newly sampled marker effects and adding back old ones).
-    *   For sampling location parameters: `y_corr_for_location = y_obs - (marker_effects)`.
-    *   For sampling residual variance: `final_y_corrected = y_obs - (all_effects)`.
-    My current loop structure roughly follows this but needs careful state passing.
-3.  **MME Construction in Loop**: `_construct_mme_lhs_rhs_py` is called by `sample_location_parameters_py`. This implies the MME system for location parameters is rebuilt in each iteration, which is correct as VCs change.
-4.  **GBLUP Sampling**: The Julia `GBLUP!` samples pseudo-marker effects $\alpha$ where $g = L\alpha$. So, `sample_marker_effects_gblup_py` will implement this. The variance of these pseudo-marker effects ($D_i \sigma_a^2$) is what `sample_marker_variance_gblup_py` would target (sampling $\sigma_a^2$).
-5.  **BayesC0 Sampling**: `sample_marker_effects_bayesc0_py` will sample marker effects assuming a common variance $\sigma_g^2$. `sample_marker_variance_bayesc0_py` samples this $\sigma_g^2$. Since $\pi=1$ (all markers included), no sampling of $\delta_j$ or $\pi$ is needed for BayesC0.
-
-This structure is a starting point. The actual implementation of each sampling step and the MME construction needs to be robust.
-
-Next, I'll update `model_components.py` to ensure `MME_py` can hold the necessary MCMC state, and then create unit tests for `mcmc_engine.py`. Given the complexity, the initial unit tests will be very basic, focusing on structure and flow.

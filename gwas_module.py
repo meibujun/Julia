@@ -379,31 +379,3 @@ def run_window_gwas_py(
 
     return gwas_results_dfs, genetic_corr_df, all_win_var_props_list
 
-```
-
-I've created `gwas_module.py` with:
--   `calculate_marker_model_frequency_py`: Calculates model frequency of markers from MCMC effect samples.
--   `_parse_window_size_str`: Helper to parse strings like "1 Mb" into base pairs.
--   `_define_genomic_windows`: Helper to define genomic windows based on a map file, window size, and sliding/non-sliding option. It maps window SNPs to their column indices in the model's genotype matrix `X`.
--   `run_window_gwas_py`: The main function.
-    -   Reads map file and marker effect MCMC samples.
-    -   Aligns marker effects from file to the order of markers in the model's `X` matrix.
-    -   Iterates MCMC samples:
-        -   Calculates total genetic variance $var(X\alpha)$.
-        -   For each window, calculates window breeding values $BV_{winj} = X_{winj}\alpha_{winj}$ and its variance $var(BV_{winj})$.
-        -   Stores window variance proportions.
-        -   Accumulates $BV_{winj}$ for local EBV calculation (mean across MCMC samples).
-    -   Calculates WPPA and mean variance proportions per window.
-    -   If `genetic_correlation_flag` is true and two effect files are given:
-        -   Calculates window covariances and correlations between the two traits' window BVs for each MCMC sample.
-        -   Summarizes these to posterior means and std devs.
-    -   Returns DataFrames of results.
--   Mock MME and GenotypeComponent classes are included at the top for standalone execution/testing if `model_components.py` is not in the path. These should be removed if integrating into a larger project structure.
-
-**Self-Correction/Refinements:**
--   **Marker Alignment:** Added a crucial step in `run_window_gwas_py` to align marker effects read from file to the order of markers in the `X_geno` matrix (derived from `model_marker_ids`). This is vital if the effects file doesn't perfectly match the model's internal marker order.
--   **Local EBV Individuals:** Clarified that `X_geno` and `individual_ids_for_lebv` must correspond. The `GenotypesComponent.obs_ids` (which should match `X_geno` rows) are used if `local_ebv_flag` is true.
--   **Window SNP Indices:** `_define_genomic_windows` now stores `snp_indices_in_X` which are the 0-based column indices in the main `X_geno` matrix for the SNPs in that window. This simplifies slicing `X_geno` and `alpha_i`.
--   **Genetic Correlation:** The storage `all_trait_bv_win_samples` is structured to hold, for each trait, a list where each element is an array of `(n_individuals x n_mcmc_samples)` for a specific window's BVs. This allows for easier calculation of correlations across MCMC samples.
-
-Next, I will create `test_gwas_module.py`.

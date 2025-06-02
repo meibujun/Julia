@@ -308,17 +308,3 @@ M,L,A
 if __name__ == '__main__':
     unittest.main()
 
-```
-
-The unit tests cover:
-*   Reading pedigree from DataFrame and CSV file.
-*   Calculating inbreeding coefficients for several individuals with varying complexity, including a simple self-fertilization case.
-*   Testing cases that should result in `RecursionError` due to self-referencing founders (K,K,K) or direct loops (L-M). This is important to show limitations or expected behavior for malformed pedigrees.
-*   Calculating a few additive relationships.
-*   Verifying the `ordered_ids` list based on `seq_id`.
-
-The manual calculations for inbreeding and relationships in the comments of the test methods help verify the correctness of the assertions. I've refined the `_fill_map` logic slightly for robustness in handling placeholders for parents and ensuring individuals listed in the first column correctly get their parent info even if they were already added as a placeholder. Also improved error handling in `_calculate_additive_relationship` if `seq_id` is not coded.
-
-One important aspect is that the Julia `code!` function's behavior with `@showprogress` implies it iterates over `keys(ped.idMap)`. The Python equivalent iterates over a list copy of these keys. The recursive nature ensures dependencies are met.
-
-The problematic cases (K,K,K and the L-M loop) are expected to cause recursion errors as they represent ill-defined pedigrees for the standard tabular method of calculating inbreeding and relationships without specific handling for such loops or undefined base animals. This is consistent with how many pedigree programs would behave unless they have specific algorithms for breaking loops or handling such cases (e.g., by treating K in (K,K,K) as an external, already inbred founder). My implementation will raise `RecursionError`.

@@ -135,6 +135,3 @@ class TestMMEBuilder(unittest.TestCase):
 if __name__ == '__main__':
     unittest.main()
 
-```
-
-**Phase 3: Update Unit Tests for MCMC Engine (`genostockpy/tests/mcmc/test_mcmc_engine.py`)**

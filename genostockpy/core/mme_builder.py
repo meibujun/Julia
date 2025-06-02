@@ -225,21 +225,3 @@ def build_full_design_matrices_py(mme: MME_py):
     mme.num_total_effects_in_mme_system = current_col_offset_overall
     return mme.num_total_effects_in_mme_system
 
-```
-
-This is a more substantial `build_full_design_matrices_py`.
-**Key improvements:**
--   Iterates through parsed `mme.model_terms` (expected to be `ParsedTerm` like objects/dicts).
--   Handles fixed effects (intercept, covariates, factors with dummy variables) per trait and then combines them using `scipy.linalg.block_diag` for multi-trait structure.
--   Updates `term_cfg.n_levels`, `term_cfg.columns_in_X` (names of dummy columns).
--   Populates `mme.effects_map` with `start_col` and `num_cols` for these fixed effects relative to their position in the final `X_effects_matrix`.
--   Constructs `mme.Z_marker_matrix` similarly if BayesC0-like markers are to be included directly in MME, and updates `effects_map`.
--   Maps other random effects (like polygenic using $A^{-1}/H^{-1}$) to conceptual columns *after* $X_{effects}$ and $Z_{marker}$, updating `effects_map`. The actual $Z$ matrices for these are not built here; their $K^{-1}$ is added directly to LHS later.
--   Returns `mme.num_total_effects_in_mme_system`, which is the sum of columns from $X_{effects}$, $Z_{markers}$, and levels of other random effects. This is crucial for sizing the MME system and `solution_vector`.
-
-**Limitations still:**
--   Interaction terms are not processed.
--   Alignment of `gc.genotype_matrix` rows with `mme.obs_id` for `Z_marker_matrix` is assumed or flagged as needing a robust solution.
--   The `effects_map` for random effects not in X/Z_marker is for their block *after* X and Z_marker blocks. This implies a specific ordering in the MME system.
-
-Now, refining `_construct_mme_lhs_rhs_py` in `mcmc_engine.py` to use this more detailed `effects_map`.

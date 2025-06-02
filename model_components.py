@@ -677,29 +677,3 @@ def set_random_py(mme: MME_py,
         random_type=random_type
     )
     mme.random_effect_components.append(random_effect_comp)
-```
-
-I've created `model_components.py` with:
--   `VarianceComponent`, `RandomEffectComponent`, `GenotypesComponent` classes.
--   A placeholder `MME_py` class (if not already fully defined from previous steps, this provides the necessary attributes).
--   Key validation functions: `check_model_arguments_py`, `check_output_id_py`, `check_data_consistency_py`.
--   `set_default_priors_for_variance_components_py` for setting default priors.
--   `set_random_py` for defining random effect components.
-
-**Self-Correction/Refinements during thought process:**
-
-1.  **`MME_py` Structure**: The `MME_py` class needs to be thought of as the central hub. Functions in `model_components.py` will mostly take an `MME_py` instance and modify it or read from it. I've added more attributes to the placeholder `MME_py` to reflect what these functions expect.
-2.  **`VarianceComponent`**: Decided to make it a standalone class as it's reused by `ResidualComponent`, `RandomEffectComponent`, and `GenotypesComponent`. Added `is_g_component` flag for clarity.
-3.  **Default Priors**: The logic for `set_default_priors_for_variance_components_py` tries to mirror the Julia version's partitioning strategy (using `h2=0.5`). The exact calculation of `scale` for priors needed careful consideration to match standard forms (Inverse Wishart, Scaled Inverse Chi-squared/Inverse Gamma). Julia's scale for scalar variance `G*(df-2)/df` is a bit different from `value * (df-2)` if `value` is the mean/prior guess. I've used a common form `value * (df_prior - p - 1)` for matrix and `value * (df_prior - 2.0)` for scalar-like.
-4.  **`set_random_py`**:
-    *   Parsing `randomStr`: The Julia code dynamically checks if terms are in model equations and prepends trait names. My Python version simplifies this: if `randomStr` has terms like "animal", it implies it applies to all traits where "animal" is a factor. If it's "y1:animal", it's specific. This needs to align with how `mme.model_term_dict` is keyed.
-    *   `Vinv_obj`: Handling the case where `Vinv_obj` is a `Pedigree` instance requires that the `Pedigree` class and its `calculate_A_inverse` method are available.
-    *   The `Gi`, `GiOld`, `GiNew` logic from Julia's `RandomEffect` is replicated by having `variance_prior`, `variance_prior_old`, `variance_prior_new` in `RandomEffectComponent`.
-5.  **`GenotypesComponent`**: Added more fields like `alpha`, `beta`, `delta`, `gamma_array` as placeholders for MCMC state, even if not fully utilized in this setup phase, to align with Julia's `Genotypes` struct.
-6.  **Error Handling & Warnings**: Added `ValueError` for critical issues and `print("Warning: ...")` for less critical ones, similar to Julia's `error()` and `printstyled()`.
-7.  **`input_data_validation.jl` functions**:
-    *   `make_dataframes` and `make_incidence_matrices` are heavily tied to the MME matrix construction (`build_MME.jl`). While they perform some validation (missing levels), their primary role is data preparation for `getX` and `getMME`. I'll defer their full translation to when MME construction is revisited/finalized, but the validation aspects (like checking for missing values in factors) can be incorporated into `check_data_consistency_py`.
-    *   `init_mixed_model_equations` is also part of MME construction. The part about setting starting values for `sol` and `alpha` can be a separate utility.
-    *   `R_constraint!` and `G_constraint!` modify `df` and `scale` of variance components. This logic can be part of the `VarianceComponent` class or methods that update it if a constraint is applied. For now, the `constraint` flag is stored.
-
-Next, I will create the unit tests for the implemented functions.

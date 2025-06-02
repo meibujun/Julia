@@ -68,8 +68,3 @@ Functions for saving and managing output from analyses.
 
 .. automodule:: genostockpy.utils.output_utils
    :members: save_results_to_csv_py, get_ebv_py
-```
-
-Finally, expanding docstrings in `genostockpy/api.py`. Since this file was just created with extensive docstrings, I will review and ensure they are in good shape for Napoleon and autodoc. The existing docstrings are already quite detailed and follow a consistent style. I'll ensure parameters and return types are clear.
-
-I'll apply minor touch-ups to the `api.py` docstrings for clarity and consistency, especially for the `Returns: self` part for chainable methods.

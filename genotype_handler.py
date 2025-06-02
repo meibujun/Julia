@@ -287,15 +287,3 @@ def calculate_grm_py(
     variances = np.var(genotype_matrix, axis=0)
     return variances < tolerance
 
-```
-
-This creates `genotype_handler.py` with `read_genotypes_py` and some utility functions.
-`read_genotypes_py` handles:
-- Reading from CSV or DataFrame.
-- Optional header for marker IDs.
-- Missing value imputation (with column mean).
-- MAF filtering.
-- Centering.
-- Returns a dictionary with the processed matrix, IDs, and allele frequencies.
-
-Next, I'll work on extending `model_components.py` for GBLUP and BayesC0 setup and then create the unit tests.
