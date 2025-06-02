@@ -132,8 +132,3 @@ s5,2,1,0,2,0
 
 if __name__ == '__main__':
     unittest.main()
-```
-
-This creates `test_genotype_handler.py` with tests for `read_genotypes_py` (CSV, DataFrame, headers, missing values), allele frequency calculation, centering, and MAF filtering. It also includes tests for the standalone utility functions.
-
-Now, I'll update `test_model_components.py` to include tests for the new GBLUP and BayesC0 setup logic.

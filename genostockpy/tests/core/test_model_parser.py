@@ -101,6 +101,3 @@ class TestModelParser(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
-```
-
-**Phase 2: Unit Tests for MME Builder (`genostockpy/tests/core/test_mme_builder.py`)**

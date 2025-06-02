@@ -186,29 +186,3 @@ class TestModelComponents(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
-```
-
-I've created `model_components.py` and `test_model_components.py`.
-
-**Summary of `model_components.py`:**
--   Defined `VarianceComponent`, `RandomEffectComponent`, `GenotypesComponent` classes.
--   Included a placeholder for `MME_py` that these components and functions interact with.
--   Implemented Python versions of key functions from `input_data_validation.jl`:
-    -   `check_model_arguments_py`
-    -   `check_output_id_py`
-    -   `check_data_consistency_py` (includes phenotype filtering and categorical trait validation)
-    -   `set_default_priors_for_variance_components_py`
--   Implemented Python version of `set_random` from `random_effects.jl` as `set_random_py`.
--   Logic from `residual.jl` (like `mkRi`, `sampleMissingResiduals`) is more tied to MCMC matrix building or execution, so it's not directly translated here, but the `ResidualComponent` (implicitly `mme.residual_variance`) setup is covered.
--   Logic from `variance_components.jl` (sampling functions) is also for MCMC execution; this module focuses on setting up the *priors* for those variance components.
-
-**Summary of `test_model_components.py`:**
--   Basic tests for creating `VarianceComponent`.
--   Tests for `check_model_arguments_py` (valid, invalid method, BayesA conversion).
--   Tests for `check_output_id_py` (defaulting logic, filtering).
--   Tests for `check_data_consistency_py` (phenotype filtering based on genotype availability, categorical trait validation).
--   Tests for `set_default_priors_for_variance_components_py` to ensure priors are initialized for residual, genetic, and other random effects.
--   Tests for `set_random_py` for IID and pedigree-based random effects.
--   A `MockPedigree` and `MockModelTerm` class are used to simulate dependencies for tests.
-
-This set of implemented functions and classes provides a foundation for defining model structure, validating inputs, and setting up priors for variance components, analogous to the provided Julia files.

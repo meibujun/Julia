@@ -179,6 +179,3 @@ class TestIntegrationSSGBLUP(unittest.TestCase):
 if __name__ == '__main__':
     import pathlib
     unittest.main()
-```
-
-Now, run the tests and attempt to read the output files.

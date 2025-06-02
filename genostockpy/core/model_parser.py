@@ -143,6 +143,3 @@ def parse_model_equation_py(equation_str: str,
 
     return response_vars, all_terms_list, all_terms_map
 
-```
-
-Re-creating `genostockpy/core/mme_builder.py`.

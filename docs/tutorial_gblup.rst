@@ -206,6 +206,3 @@ This tutorial demonstrates the basic workflow for setting up and (conceptually)
 running a GBLUP analysis with GenoStockPy. As the library develops, the internal
 MCMC computations will be fully implemented, and result interpretation will become
 more concrete.
-```
-
-Now, creating `api_reference.rst`. This will use `automodule` to pull documentation from `genostockpy.api`.

@@ -320,14 +320,3 @@ class TestMCMCEngine(unittest.TestCase):
 if __name__ == '__main__':
     import mcmc_engine
     unittest.main()
-```
-
-I've re-created `genostockpy/tests/mcmc/test_mcmc_engine.py` with the latest version of the tests, including:
--   Refined `setUp` for more consistent MME initialization.
--   A new test `test_construct_mme_lhs_rhs_simple_st_with_iid_random` which uses `effects_map` to verify correct addition of $\lambda_{iid}$ for an IID random effect whose columns are part of `X_effects_matrix`. This is a step towards testing the `addVinv` logic.
--   Updated `test_sample_other_random_effect_variances_implemented_sse` to use `effects_map` for identifying the solutions ($u$) and perform the $u'K^{-1}u$ calculation (with $K^{-1}=I$ for the mock IID effect).
--   Renamed `sample_marker_variance_gblup_py` to `sample_genetic_variance_for_gblup_component_py` in the test file to match the change made conceptually (though not yet applied to `mcmc_engine.py` itself in this turn due to file recreation). I'll ensure the actual function name is updated in `mcmc_engine.py` next.
--   Added `test_sample_marker_effects_bayesc0` to verify that marker effects are updated by the sampler.
--   Adjusted `test_run_mcmc_structure_and_flow_basic` to ensure `obs_id` is correctly initialized and to reflect that marker effect samplers might be more specific now (though still mocked broadly for this structural test).
-
-Next, I will ensure `sample_marker_variance_gblup_py` is renamed to `sample_genetic_variance_for_gblup_component_py` in `mcmc_engine.py` and then proceed with running the integration tests and documenting their outputs.

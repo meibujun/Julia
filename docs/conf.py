@@ -113,6 +113,3 @@ epub_author = author
 epub_publisher = author
 epub_copyright = copyright
 epub_exclude_files = ['search.html']
-```
-
-Now, I'll create the main `index.rst`.

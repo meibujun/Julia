@@ -39,6 +39,3 @@ API Reference
 -------------
 
 For detailed information on specific classes and functions, refer to the :doc:`api_reference`.
-```
-
-Now, create `installation.rst`.

@@ -145,6 +145,3 @@ class TestIntegrationBayesC0(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
-```
-
-Now, I will do the same for `test_integration_ssgblup.py`: modify it to write key results to `/tmp/ssgblup_results.txt`.

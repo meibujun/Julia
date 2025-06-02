@@ -239,8 +239,3 @@ def build_design_matrices_and_effect_map_py(mme: MME_py):
     mme.solution_vector = np.zeros(current_col_idx) # Initialize solution vector for fixed effects in X
 
     print(f"Design matrices built: X_effects_matrix ({mme.X_effects_matrix.shape}) for {len(mme.effect_names_ordered)} effects.")
-```
-
-**Phase 2: Implement Full MME LHS and RHS Construction**
-
-Refining `_construct_mme_lhs_rhs_py` in `genostockpy/mcmc/mcmc_engine.py`.

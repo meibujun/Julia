@@ -175,6 +175,3 @@ class TestOutputUtilsPy(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
-```
-
-This creates `test_output_utils_py.py`. I've added more specific checks for file headers and content where appropriate, and used `unittest.mock.Mock` for `rec.variance_prior` to avoid needing the full `VarianceComponent` definition if it's complex or in another module not directly tested here. The mock MME object is also slightly adjusted for testability.

@@ -144,12 +144,3 @@ if __name__ == '__main__':
     import mcmc_engine # Ensure mcmc_engine is importable for mocks to attach
     unittest.main()
 
-```
-
-I've created `test_mcmc_engine.py`:
--   Sets up a simple `MME_py` instance for testing.
--   `test_construct_mme_lhs_rhs_simple`: Checks the basic MME construction (currently simplified, especially $R_{eff}^{-1}$).
--   `test_sample_location_parameters_simple`: Checks if solution vector is updated.
--   `test_run_mcmc_structure_and_flow`: This is a structural test. It mocks out the actual complex sampling logic for VCs and marker effects to verify that the main loop runs, parameters get updated (even if by mock logic), and samples are collected. This is crucial because testing the statistical correctness of full MCMC chains is beyond basic unit tests.
-
-**Final Step:** Submit the report. The subtask is large, so the implementation focuses on the core structures and the integration points for GBLUP and BayesC0. Many sampling functions are placeholders. The MME construction (`_construct_mme_lhs_rhs_py`) is also simplified, especially for multi-trait cases. These would be areas for future refinement.
