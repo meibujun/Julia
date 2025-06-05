@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Sheep Breeding Management</title>
+</head>
+<body>
+<h1>Sheep Breeding Management</h1>
+<div>
+    <h2>Add Breed</h2>
+    <input id="breed-name" placeholder="Breed name">
+    <button onclick="addBreed()">Add</button>
+</div>
+<div>
+    <h2>Breeds</h2>
+    <ul id="breeds"></ul>
+</div>
+<script>
+async function loadBreeds() {
+    const res = await fetch('/breeds');
+    const data = await res.json();
+    const ul = document.getElementById('breeds');
+    ul.innerHTML = '';
+    data.forEach(b => {
+        const li = document.createElement('li');
+        li.textContent = b.name;
+        ul.appendChild(li);
+    });
+}
+
+async function addBreed() {
+    const name = document.getElementById('breed-name').value;
+    await fetch('/breeds', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({name})
+    });
+    document.getElementById('breed-name').value = '';
+    loadBreeds();
+}
+
+loadBreeds();
+</script>
+</body>
+</html>
