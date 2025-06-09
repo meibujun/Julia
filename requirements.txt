@@ -1,3 +1,8 @@
 pandas
 numpy
 scipy
+Flask
+celery
+redis
+pydantic
+Flask-Pydantic

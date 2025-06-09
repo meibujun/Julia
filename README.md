@@ -105,4 +105,23 @@ python examples/basic_breeding_program_simulation.py
 -   **Performance:** For very large datasets, direct matrix inversions (A<sup>-1</sup>, G<sup>-1</sup>) can be computationally intensive. Sparse matrix operations or iterative solvers (e.g., for MME) could be explored for optimization.
 -   **Error Handling:** While basic checks are in place, error handling could be made more robust.
 -   **Input File Formats:** Currently primarily uses CSVs. Support for other common genetic data formats could be added.
+
+## Testing
+
+The project includes a suite of unit tests to verify the functionality of the core toolkit modules.
+
+**Running Tests:**
+
+To run all unit tests, navigate to the project root directory and execute the following command:
+
+```bash
+python -m unittest discover -s tests -p "test_*.py"
+```
+
+This command will automatically discover and run all test files (matching the pattern `test_*.py`) within the `tests` directory and its subdirectories.
+
+Make sure you have any necessary testing libraries installed (e.g., `unittest` is part of the standard library, but if `pytest` were used, it would be a dependency).
+The tests cover modules for data management, genetic evaluation (relationship matrices, BLUP models), and breeding strategies.
+
+For more details on the API testing and maintainer-specific information, refer to the `README.md` file located in the `sheep_breeding_api/` directory.
 ```
