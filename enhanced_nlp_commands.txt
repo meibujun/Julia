@@ -1,0 +1,84 @@
+## Enhanced Natural Language Commands for Sheep Breeding Management System
+
+### 1. Advanced Data Querying
+
+**Multiple Conditions, Ranges, Sorting, Aggregations:**
+*   "List all active female animals with birth weight greater than 4.2 kg and weaning weight between 28kg and 32kg, order by eartag."
+*   "Show Merino ewes born in 2022 with a fleece diameter less than 19.5 microns or staple length greater than 100mm, sorted by fleece weight EBV descending."
+*   "What is the average birth weight and average weaning weight for Poll Dorset lambs born after 2023-03-01?"
+*   "Count active animals per breed and sex."
+*   "Find the minimum and maximum weaning weight recorded in the last 6 months for Texel lambs."
+*   "Display eartag, sex, and birthdate for all animals sold between 2023-01-01 and 2023-06-30, order by sale date."
+*   "List animals with notes containing 'health check' and purchased before 2022."
+*   "Show the top 10 animals by weaning weight EBV, only include active males."
+
+**Relational Queries (Joining Information):**
+*   "List lambs whose sire is S001 and whose dam has an EBV for milk production greater than 0.5."
+*   "Show ewes whose sire's fleece weight EBV is in the top 10% and whose dam's weaning weight EBV is above breed average."
+*   "Find animals that have at least 3 offspring recorded in the system."
+*   "List animals that have phenotypic records for both 'fleece weight' and 'weaning weight'."
+*   "Show all animals owned by user 'JohnDoe' that are of breed 'Suffolk'."
+*   "List sires that have produced offspring with an average birth weight below 3.5 kg."
+*   "Display animals whose grand-sire (sire's sire) is animal G001."
+
+**Null Value Checks & Existence:**
+*   "Show all animals with no recorded weaning weight but are older than 100 days."
+*   "List active ewes that do not have a sire or dam recorded."
+*   "Find animals that have never had a 'fleece diameter' measurement."
+*   "Count animals that have a 'sale date' recorded."
+*   "Display animals with missing birth weights but have a birth date before 2023."
+
+### 2. Batch Data Operations
+
+*   "Record the following weaning weights all measured today: L010 25.2kg, L011 26.1kg, L012 24.8kg, L015 27.0kg."
+*   "Log fleece sample taken for animals E001, E002, E003 on 2024-03-15 with notes 'annual shearing'."
+*   "Add these new lambs: (Eartag: N001, Sex: Male, BirthDate: 2024-04-01, Sire: R001, Dam: E010, Breed: Merino), (Eartag: N002, Sex: Female, BirthDate: 2024-04-02, Sire: R002, Dam: E011, Breed: Merino)." (More challenging for pure NLP, might require structured input helper).
+*   "Deactivate animals S200, S201, S205 due to sale on 2024-05-20."
+*   "Update current owner to 'FarmGroupX' for animals L100 through L150."
+*   "Mark animals A001, A002, A003 as sold on 2023-12-01 for $300 each."
+
+### 3. Enhanced Genetic Analysis Initiation & Querying
+
+*   "Run BLUP for traits 'weaning weight' and 'post-weaning gain' for all lambs born in spring 2023, using 'sex', 'birth type', and 'age of dam' as fixed effects. Name this evaluation 'Spring2023_GrowthEval'."
+*   "Estimate breeding values for fleece diameter for all 2-tooth Merino animals, include 'contemporary group' and 'sex' in the model. Use data from the last 3 years only."
+*   "Compare EBVs for 'fleece weight', 'growth rate', and 'fertility' between rams R001, R002, and R003, showing their current accuracies."
+*   "What is the average EBV for weaning weight for animals sired by R050 versus animals sired by R055?"
+*   "Show the genetic trend for weaning weight and fleece weight over the last 5 years for the entire flock, plotted on a chart."
+*   "List the top 5% of animals for 'post-weaning gain' EBV from the 'AnnualEval2023' run."
+*   "What is the additive relationship coefficient between animal A500 and A510?"
+*   "Display the inbreeding coefficient for animal X001 and its parents."
+*   "Retrieve the full relationship matrix for animals L001, L002, S010, D020 in CSV format."
+*   "What are the GEBVs for trait 'parasite resistance' for my genotyped rams?" (Assumes GEBVs are stored)
+
+### 4. Sophisticated Mating Plan Interactions
+
+*   "Suggest mates for ewes E001, E002, E003 using a custom selection index: 0.4*WW_EBV + 0.3*FW_EBV + 0.3*FD_EBV. Exclude any offspring of ram R100 and keep inbreeding under 2.5%."
+*   "Find the 5 least related and genetically superior rams for ewe E050, prioritizing low birth weight EBV and high weaning weight EBV. Maximum inbreeding 1%."
+*   "What would be the expected progeny EBVs and inbreeding if I mate sire S200 with all my active Merino ewes that are not his daughters?"
+*   "Generate a mating plan to maximize genetic gain for 'fleece weight' across my flock of 200 ewes using available 10 rams, ensuring no sire is used more than 30 times and average inbreeding stays below 3%." (Highly complex, likely needs iterative refinement or a dedicated optimization engine).
+*   "For ewe E010, show potential mates that would improve her progeny's staple length EBV by at least 0.5 points without increasing inbreeding above 5%."
+*   "Optimize mate allocation for my 5 best rams across 50 selected ewes to achieve an average progeny EBV index of X, minimizing overall inbreeding."
+*   "Exclude rams R005 and R007 from any mating suggestions for ewes related to D010."
+
+### 5. Trait & System Management (Conceptual)
+
+*   "Define a new trait: 'Eye Muscle Depth', abbreviation EMD, unit mm, category 'Carcass'."
+*   "Modify trait 'Weaning Weight': change unit to 'lbs' and update description to 'Live weight at approximately 90 days'."
+*   "Archive trait 'OldTraitName'."
+*   (Conceptual User Management) "Add new user 'breeder_jane' with data entry role."
+*   (Conceptual Settings) "Set default date format to DD-MM-YYYY for reports."
+
+### 6. Conversational Follow-ups / Contextual Commands
+
+*   (After "List all active rams"): "For these rams, show their fleece weight EBVs and accuracies."
+*   (After "Show details for animal L001"): "Who are its offspring?"
+*   (After "Run BLUP for trait 'weaning weight'..."): "Which 10 animals had the highest EBVs from that evaluation?"
+*   (After "Suggest mates for ewe E001..."): "For the top suggested ram, what is his own inbreeding coefficient?"
+*   (After a list of animals is displayed): "Filter this list to show only those born after 2023."
+*   (After viewing an animal's details): "Compare its EBVs with animal S005."
+*   (If a command is ambiguous, e.g., "Show weights for L001"): System might ask "Which weights? Birth, weaning, or current?", User: "Weaning weight."
+*   (After "What is the average birth weight for Merino lambs?"): "And for Suffolk lambs?"
+*   (After "List animals with fleece diameter < 18 microns"): "Of those, how many are male?"
+
+This list aims to provide a rich set of commands that would require significant NLP capabilities to parse accurately and translate into actionable backend operations.
+```
