@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pyjwas"
+version = "0.0.1" # Initial version
+description = "Python Whole-genome Analysis Software (PyJWAS)"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "GPL-2.0-only"} # SPDX identifier for GPL-2.0
+authors = [
+    {name = "AI Language Model (Jules)", email = "noreply@example.com"},
+    # Inspired by original JWAS.jl authors:
+    # Hao Cheng, Tianjing Zhao, Rohan Fernando, Dorian Garrick
+]
+keywords = ["genomics", "gwas", "genomic prediction", "bayesian", "quantitative genetics"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: GNU General Public License v2 (GPLv2)",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+]
+
+dependencies = [
+    "numpy>=1.20",
+    "scipy>=1.7",
+    "pandas>=1.3",
+    # tqdm could be added later for progress bars if _print_progress is replaced
+]
+
+[project.urls]
+Homepage = "https://github.com/example/pyjwas" # Placeholder
+Repository = "https://github.com/example/pyjwas" # Placeholder
+# Documentation = "https://pyjwas.readthedocs.io" # Placeholder
+
+# Optional: configuration for tools like black, mypy, pytest can go here
+# [tool.pytest.ini_options]
+# pythonpath = ["src", "."] # Example if source is in src/pyjwas
+# testpaths = ["tests"]
+
+# [tool.setuptools.packages.find]
+# where = ["."] # or ["src"] if pyjwas is in src/pyjwas
+# include = ["pyjwas*"]
+# exclude = ["tests*"]
+```

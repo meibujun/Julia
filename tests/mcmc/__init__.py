@@ -1,0 +1,1 @@
+# tests.mcmc package initializer
