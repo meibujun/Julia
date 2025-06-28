@@ -146,5 +146,52 @@ class TestVarianceSamplers(unittest.TestCase):
         with self.assertRaises(ValueError): # prior_scale_matrix shape
             sample_matrix_variance_component(data, 10, 4.0, np.eye(3))
 
+    def test_sample_general_random_effect_variances_single_effect_st(self):
+        """Test sampling VC for a single random effect in a single-trait model."""
+        from pyjwas.core import MixedModelEquations, ModelTerm, RandomEffectTerm, VarianceCovariance
+
+        mme = MixedModelEquations(n_models=1, model_equations_str=["y=mu+animal"],
+                                  model_terms=[ModelTerm("mu",1,"y"), ModelTerm("animal",1,"y")],
+                                  model_term_dict={}, lhs_variables=["y"],
+                                  residual_variance_info=VarianceCovariance(value=1.0))
+
+        n_animals = 50
+        # Mock solutions for the animal effect
+        # Assume animal is the first random effect, starts at col 1 (after intercept mu at col 0)
+        mme.model_term_dict["y:animal"] = ModelTerm("animal",1,"y")
+        mme.model_term_dict["y:animal"].start_pos = 1
+        mme.model_term_dict["y:animal"].n_levels = n_animals
+        mme.model_term_dict["y:animal"].names = [f"a{i}" for i in range(n_animals)]
+
+        mme.solutions = np.random.randn(1 + n_animals) * 0.5 # mu + animal effects
+
+        # Setup RandomEffectTerm
+        animal_re = RandomEffectTerm(term_array=["y:animal"], random_type="A")
+        animal_re.V_inv = np.eye(n_animals) # Simple A_inv = I for testing
+        # Prior for G (animal variance matrix, scalar for ST)
+        # Gi.scale is Psi_0 (prior scale matrix for G). For ST, this is scalar S0_g^2
+        # Gi.df is nu_0
+        animal_re.Gi = VarianceCovariance(value=None, df=4.0, scale=0.2, estimate_variance=True)
+        animal_re.Gi_new = VarianceCovariance(value=None, df=4.0, scale=0.2, estimate_variance=True) # Used by ST
+        mme.random_effect_terms.append(animal_re)
+
+        from pyjwas.utils.samplers import sample_general_random_effect_variances # Re-import for standalone test
+
+        initial_G_inv = animal_re.Gi_new.value
+        sample_general_random_effect_variances(mme)
+
+        self.assertIsNotNone(animal_re.Gi_new.value)
+        self.assertIsInstance(animal_re.Gi_new.value, (float, np.floating, np.ndarray)) # Can be 1x1 array or scalar
+        if isinstance(animal_re.Gi_new.value, np.ndarray):
+            self.assertEqual(animal_re.Gi_new.value.shape, (1,1))
+            self.assertTrue(animal_re.Gi_new.value[0,0] > 0)
+        else: # scalar
+            self.assertTrue(animal_re.Gi_new.value > 0)
+
+        # Check if mme.pedigree_inv_covariance was updated (since type "A")
+        self.assertIsNotNone(mme.pedigree_inv_covariance)
+        self.assertIsNotNone(mme.pedigree_inv_covariance.value)
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -61,6 +61,9 @@ import pandas as pd
 # 5. Analyze results
 # print(results["mean_solutions"])
 # print(results["mean_residual_variance"])
+
+# For a runnable example with simulated data for an RR-BLUP model,
+# please see `examples/run_rrblup_simulation.py`.
 ```
 
 ## Development Status

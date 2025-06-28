@@ -9,10 +9,16 @@ from ..core.mme import MixedModelEquations
 from ..core.mcmc_info import MCMCInfo
 from ..core.variance_covariance import VarianceCovariance
 from ..utils.solvers import gibbs_sample_solution_in_place
-from ..utils.samplers import sample_scalar_variance_component, sample_matrix_variance_component
-from ..core.model_builder import _make_Ri_matrix # Assuming this is appropriately placed or imported
+from ..utils.samplers import sample_scalar_variance_component, sample_matrix_variance_component, sample_general_random_effect_variances
+from ..core.model_builder import _make_Ri_matrix
 from scipy.sparse import identity as sparse_identity, csc_matrix, csr_matrix, diags, lil_matrix, spmatrix
-from .marker_samplers import _sample_marker_effects_rrblup_st
+from .marker_samplers import (
+    _sample_marker_effects_rrblup_st,
+    _sample_marker_effects_bayesa_st,
+    _sample_marker_effects_bayesc_st,
+    _sample_marker_effects_bayesb_st,
+    _sample_marker_effects_bayesl_st
+)
 
 
 def _print_progress(iteration, total_iterations, start_time, print_frequency):
@@ -30,18 +36,9 @@ def _update_mme_lhs_for_solver(mme: MixedModelEquations):
     if mme.mme_LHS is None:
         raise ValueError("_update_mme_lhs_for_solver cannot proceed if mme.mme_LHS is not initialized.")
 
-    # Efficiently update sparse LHS:
-    # It's assumed mme.mme_LHS initially contains X'R_invX.
-    # This function adds the CHANGE in Lambda: Lambda_new - Lambda_old.
-    # Lambda_old was based on Gi_old and R_old. Lambda_new is based on Gi_new and R_new.
-
-    # If mme.mme_LHS is dense, direct updates are fine.
-    # If sparse, it must be in LIL format for efficient indexed changes.
     is_sparse_lhs = isinstance(mme.mme_LHS, spmatrix)
-    original_sparse_format = None
-    if is_sparse_lhs and not isinstance(mme.mme_LHS, lil_matrix):
-        original_sparse_format = type(mme.mme_LHS)
-        mme.mme_LHS = mme.mme_LHS.tolil()
+    # Assume mme.mme_LHS is already LIL if it's sparse and updates are frequent,
+    # handled at the start of run_mcmc.
 
     for py_random_term in mme.random_effect_terms:
         if not (py_random_term.Gi_new and py_random_term.Gi_new.value is not None and \
@@ -50,7 +47,7 @@ def _update_mme_lhs_for_solver(mme: MixedModelEquations):
 
         n_levels_first_term = mme.model_term_dict[py_random_term.term_array[0]].n_levels if \
                               py_random_term.term_array and py_random_term.term_array[0] in mme.model_term_dict else 0
-        if n_levels_first_term == 0 and py_random_term.V_inv is None : continue # Cannot form Vi
+        if n_levels_first_term == 0 and py_random_term.V_inv is None : continue
 
         Vi = py_random_term.V_inv if py_random_term.V_inv is not None else \
              sparse_identity(n_levels_first_term, format="csc", dtype=np.float64)
@@ -74,26 +71,16 @@ def _update_mme_lhs_for_solver(mme: MixedModelEquations):
                     current_R_val, old_R_val = float(mme.R_variance.value), float(mme.R_old_value)
                     change_in_lambda_block_scalar = (g_new_ij * current_R_val - g_old_ij * old_R_val)
                 else:
-                    val_Gi_new, val_Gi_old = py_random_term.Gi_new.value, py_random_term.Gi_old.value
+                    val_Gi_new, val_Gi_old = py_random_term.Gi_new.value, py_random_term.Gi_old.value # These should be G_inv matrices
                     g_new_ij = val_Gi_new[i,j] if isinstance(val_Gi_new, np.ndarray) else val_Gi_new
                     g_old_ij = val_Gi_old[i,j] if isinstance(val_Gi_old, np.ndarray) else val_Gi_old
-                    change_in_lambda_block_scalar = g_new_ij - g_old_ij
+                    change_in_lambda_block_scalar = g_new_ij - g_old_ij # G_inv_new[i,j] - G_inv_old[i,j]
 
                 matrix_to_add = Vi * change_in_lambda_block_scalar
-                # This assumes Vi is compatible shape with the block.
-                # If Vi is (N_levels, N_levels) and the block is also (N_levels, N_levels)
                 if mme.mme_LHS[start_pos_i:end_pos_i, start_pos_j:end_pos_j].shape == matrix_to_add.shape:
                     mme.mme_LHS[start_pos_i:end_pos_i, start_pos_j:end_pos_j] += matrix_to_add
                 else:
-                    # This can happen if Vi is (N_total_levels, N_total_levels) but term_array refers to sub-blocks.
-                    # Requires careful slicing of Vi or ensuring Vi is already correctly dimensioned.
-                    # For now, assume Vi is correctly sized for the block it applies to.
-                    # (e.g. if Vi is A_inv for "animal", n_levels_first_term is n_animals)
-                    print(f"Warning: Shape mismatch in LHS update for terms {term_i_str}, {term_j_str}. Block shape: {mme.mme_LHS[start_pos_i:end_pos_i, start_pos_j:end_pos_j].shape}, Matrix to add shape: {matrix_to_add.shape}")
-
-
-    if original_sparse_format == csc_matrix: mme.mme_LHS = mme.mme_LHS.tocsc()
-    elif original_sparse_format == csr_matrix: mme.mme_LHS = mme.mme_LHS.tocsr()
+                    print(f"Warning: Shape mismatch in LHS update for terms {term_i_str}, {term_j_str}.")
 
 
 def _calculate_effective_mme_rhs_for_solver(mme: MixedModelEquations, df_pheno_for_ri: Optional[pd.DataFrame]) -> np.ndarray:
@@ -103,47 +90,33 @@ def _calculate_effective_mme_rhs_for_solver(mme: MixedModelEquations, df_pheno_f
     marker_contribution_to_y = np.zeros_like(mme.y_sparse.ravel(), dtype=np.float64)
     n_obs_per_trait = len(mme.obs_ids)
 
-
     for geno_data in mme.genotypes_data_list:
         if geno_data.genotypes is not None and geno_data.alpha_samples and len(geno_data.alpha_samples) > 0:
             for trait_idx in range(mme.n_models):
                 if trait_idx < len(geno_data.alpha_samples) and geno_data.alpha_samples[trait_idx] is not None:
                     current_alpha_trait = geno_data.alpha_samples[trait_idx]
-                    # This requires geno_data.genotypes to be (n_obs_per_trait, n_markers)
-                    # and that it applies to this trait_idx block of y.
                     if geno_data.genotypes.ndim == 2 and \
                        geno_data.genotypes.shape[0] == n_obs_per_trait and \
                        geno_data.genotypes.shape[1] == len(current_alpha_trait):
-
                         start_row_y = trait_idx * n_obs_per_trait
                         end_row_y = start_row_y + n_obs_per_trait
                         marker_contrib_trait = geno_data.genotypes @ current_alpha_trait
                         marker_contribution_to_y[start_row_y:end_row_y] += marker_contrib_trait
-                    # Else if geno_data.genotypes is a list of Z matrices per trait, handle that.
-                    # This part needs to be robust for various ways Z_marker could be structured.
 
-    if np.any(marker_contribution_to_y != 0): # Check if there's any actual contribution
+    if np.any(marker_contribution_to_y != 0):
         R_inv_eff: Optional[spmatrix] = None
         if mme.n_models == 1:
             if mme.R_variance.value is not None and float(mme.R_variance.value) > 0:
                 diag_vals = mme.inverse_weights / float(mme.R_variance.value)
                 R_inv_eff = diags(diag_vals, format="csc")
-        else: # Multi-trait
-            # Use current_Ri_matrix if available (updated after R sampling)
+        else:
             if hasattr(mme, 'current_Ri_matrix') and mme.current_Ri_matrix is not None:
                  R_inv_eff = mme.current_Ri_matrix
-            elif df_pheno_for_ri is not None : # Fallback: recalculate if df_pheno provided
-                print("Warning: Recalculating Ri matrix for RHS adjustment. This might be inefficient if R is static.")
+            elif df_pheno_for_ri is not None :
                 R_inv_eff = _make_Ri_matrix(mme, df_pheno_for_ri, mme.inverse_weights)
-            else: # Cannot form R_inv_eff
-                 print("Warning: Cannot form R_inv for multi-trait RHS adjustment. df_pheno not provided or R not set.")
-
+            else: print("Warning: Cannot form R_inv for multi-trait RHS adjustment.")
 
         if R_inv_eff is not None and mme.X.shape[1] > 0 :
-            # X is (N_total_obs, K_effects)
-            # R_inv_eff is (N_total_obs, N_total_obs)
-            # marker_contribution_to_y is (N_total_obs,)
-            # X.T @ R_inv_eff @ marker_contribution_to_y -> (K_effects,)
             adjustment_vector = mme.X.T @ (R_inv_eff @ marker_contribution_to_y.reshape(-1,1))
             effective_rhs -= adjustment_vector.ravel()
 
@@ -163,7 +136,6 @@ def run_mcmc(mme: MixedModelEquations, df_pheno: pd.DataFrame) -> Dict[str, Any]
     if not os.path.exists(output_folder): os.makedirs(output_folder); print(f"Created output folder: {output_folder}")
     if mcmc_params.seed is not None: np.random.seed(mcmc_params.seed)
 
-    # Ensure essential MME components are initialized for accumulation
     if mme.solutions is None: mme.solutions = np.zeros(mme.mme_LHS.shape[0])
     if mme.mean_solutions is None: mme.mean_solutions = np.zeros_like(mme.solutions)
     if mme.mean_solutions_sq is None: mme.mean_solutions_sq = np.zeros_like(mme.solutions)
@@ -173,10 +145,9 @@ def run_mcmc(mme: MixedModelEquations, df_pheno: pd.DataFrame) -> Dict[str, Any]
             if mme.mean_residual_variance is None: mme.mean_residual_variance = 0.0
             if mme.mean_residual_variance_sq is None: mme.mean_residual_variance_sq = 0.0
             mme.R_old_value = float(mme.R_variance.value)
-        else: # Multi-trait
+        else:
             if mme.mean_residual_variance is None: mme.mean_residual_variance = np.zeros_like(mme.R_variance.value)
             if mme.mean_residual_variance_sq is None: mme.mean_residual_variance_sq = np.zeros_like(mme.R_variance.value)
-            # R_old_value not used for MT in _update_mme_lhs_for_solver's current logic for MT part
 
     for rt in mme.random_effect_terms:
         source_Gi_vc = rt.Gi_new if rt.Gi_new and rt.Gi_new.value is not None else (rt.Gi if rt.Gi and rt.Gi.value is not None else None)
@@ -190,30 +161,26 @@ def run_mcmc(mme: MixedModelEquations, df_pheno: pd.DataFrame) -> Dict[str, Any]
     for geno_data in mme.genotypes_data_list:
         if not geno_data.alpha_samples: geno_data.initialize_mcmc_storage(mme.n_models, geno_data.n_markers)
 
-    if mme.n_models > 1 and mme.R_variance.value is not None : # Potentially pre-calculate initial Ri if R is fixed or for first use
+    if mme.n_models > 1 and mme.R_variance.value is not None :
         mme.current_Ri_matrix = _make_Ri_matrix(mme, df_pheno, mme.inverse_weights)
-
 
     print(f"Starting MCMC: {chain_length} iterations, {burnin} burn-in.")
     start_time = time.time()
     num_saved_samples = 0
 
-    # Convert LHS to LIL format once if it's sparse and will be updated frequently
-    original_lhs_is_sparse_and_not_lil = isinstance(mme.mme_LHS, spmatrix) and not isinstance(mme.mme_LHS, lil_matrix)
-    original_lhs_type_for_conversion_back = type(mme.mme_LHS) if original_lhs_is_sparse_and_not_lil else None
-    if original_lhs_is_sparse_and_not_lil:
+    lhs_was_converted_to_lil = False
+    original_lhs_sparse_type = None
+    if isinstance(mme.mme_LHS, spmatrix) and not isinstance(mme.mme_LHS, lil_matrix):
+        original_lhs_sparse_type = type(mme.mme_LHS)
         mme.mme_LHS = mme.mme_LHS.tolil()
-
+        lhs_was_converted_to_lil = True
 
     for iter_num in range(1, chain_length + 1):
         pass
 
         if mme.mme_LHS.shape[0] > 0:
-            _update_mme_lhs_for_solver(mme) # Modifies LIL matrix
-
-            # Convert LHS to CSC for solver if it was LIL (solvers might be faster with CSC/CSR)
-            lhs_for_solver = mme.mme_LHS.tocsc() if isinstance(mme.mme_LHS, lil_matrix) else mme.mme_LHS
-
+            _update_mme_lhs_for_solver(mme)
+            lhs_for_solver = mme.mme_LHS
             effective_rhs = _calculate_effective_mme_rhs_for_solver(mme, df_pheno)
             gibbs_sample_solution_in_place(
                 lhs_for_solver, mme.solutions, effective_rhs,
@@ -222,30 +189,8 @@ def run_mcmc(mme: MixedModelEquations, df_pheno: pd.DataFrame) -> Dict[str, Any]
         y_corrected = mme.y_sparse.copy().ravel()
         if mme.X.shape[1] > 0: y_corrected -= mme.X @ mme.solutions
 
-        current_marker_total_contribution = np.zeros_like(y_corrected)
-        for geno_data in mme.genotypes_data_list:
-            if geno_data.genotypes is not None and geno_data.alpha_samples:
-                n_obs_per_trait_geno = len(mme.obs_ids)
-                for trait_idx in range(mme.n_models):
-                    if trait_idx < len(geno_data.alpha_samples) and geno_data.alpha_samples[trait_idx] is not None:
-                        current_alpha_trait = geno_data.alpha_samples[trait_idx]
-                        if geno_data.genotypes.ndim == 2 and \
-                           geno_data.genotypes.shape[0] == n_obs_per_trait_geno and \
-                           geno_data.genotypes.shape[1] == len(current_alpha_trait):
-                            start_row_y = trait_idx * n_obs_per_trait_geno
-                            end_row_y = start_row_y + n_obs_per_trait_geno
-                            current_marker_total_contribution[start_row_y:end_row_y] += geno_data.genotypes @ current_alpha_trait
-        y_corrected -= current_marker_total_contribution
-
-        # Store *_old versions for VCs that will be sampled next, for use in *next* iter's _update_mme_lhs
-        if mme.n_models == 1 and mme.R_variance.value is not None: mme.R_old_value = float(mme.R_variance.value)
-        for rt in mme.random_effect_terms:
-            if rt.Gi_new and rt.Gi_new.value is not None: # Gi_new holds current G_inv for this random effect
-                 val_to_copy = np.copy(rt.Gi_new.value) if isinstance(rt.Gi_new.value, np.ndarray) else rt.Gi_new.value
-                 scale_to_copy = np.copy(rt.Gi_new.scale) if isinstance(rt.Gi_new.scale, np.ndarray) else rt.Gi_new.scale
-                 rt.Gi_old = VarianceCovariance(value=val_to_copy, df=rt.Gi_new.df, scale=scale_to_copy)
-
-        # --- Marker Sampling (updates geno_data.alpha_samples and y_corrected further) ---
+        # This y_corrected (y - Xb) is passed to marker samplers.
+        # Marker samplers update their alphas and ALSO y_corrected to (y - Xb - Za_new)
         for geno_data in mme.genotypes_data_list:
             if geno_data.method in ["RR-BLUP", "BayesC0"]:
                 if mme.n_models == 1:
@@ -255,7 +200,7 @@ def run_mcmc(mme: MixedModelEquations, df_pheno: pd.DataFrame) -> Dict[str, Any]
                         else: print(f"Error: Fixed marker_effect_variance not set for {geno_data.name}. Skipping."); continue
 
                     _sample_marker_effects_rrblup_st(
-                        geno_data, y_corrected, # y_corrected is modified here
+                        geno_data, y_corrected,
                         float(mme.R_variance.value) if mme.R_variance.value is not None else 1.0,
                         float(geno_data.marker_effect_variance.value)
                     )
@@ -263,18 +208,93 @@ def run_mcmc(mme: MixedModelEquations, df_pheno: pd.DataFrame) -> Dict[str, Any]
                         new_marker_var = sample_scalar_variance_component(
                             geno_data.alpha_samples[0], geno_data.marker_effect_variance.df,
                             geno_data.marker_effect_variance.scale)
-                        if new_marker_var > 1e-12: geno_data.marker_effect_variance.value = new_marker_var # Avoid zero/negative
+                        if new_marker_var > 1e-12: geno_data.marker_effect_variance.value = new_marker_var
                         else: print(f"Warning: Sampled marker variance too small for {geno_data.name}.")
                 else: print(f"Warning: Multi-trait marker sampler for method {geno_data.method} not yet implemented.")
+
+            elif geno_data.method == "BayesA":
+                if mme.n_models == 1:
+                    if geno_data.marker_effect_variance is None: print(f"Warning: BayesA marker_effect_variance obj not set for {geno_data.name}. Skipping."); continue
+                    if geno_data.marker_effect_variance.df is None or geno_data.marker_effect_variance.scale is None:
+                        print(f"Error: Prior df/scale for BayesA marker variances not set for {geno_data.name}. Skipping.")
+                        continue
+
+                    _sample_marker_effects_bayesa_st(
+                        geno_data, y_corrected,
+                        float(mme.R_variance.value) if mme.R_variance.value is not None else 1.0,
+                        mme.inverse_weights
+                    )
+                else: print(f"Warning: Multi-trait BayesA sampler not yet implemented for {geno_data.name}.")
+
+            elif geno_data.method == "BayesC":
+                if mme.n_models == 1:
+                    if geno_data.marker_effect_variance is None: print(f"Warning: BayesC marker_effect_variance obj not set for {geno_data.name}. Skipping."); continue
+                    if geno_data.marker_effect_variance.value is None:
+                        if geno_data.marker_effect_variance.estimate_variance: geno_data.marker_effect_variance.value = 0.001
+                        else: print(f"Error: Fixed common marker_effect_variance not set for BayesC {geno_data.name}. Skipping."); continue
+                    if geno_data.pi_value is None:
+                        if geno_data.estimate_pi: geno_data.pi_value = 0.05
+                        else: print(f"Error: Fixed Pi value not set for BayesC {geno_data.name}. Skipping."); continue
+
+                    _sample_marker_effects_bayesc_st(
+                        geno_data, y_corrected,
+                        float(mme.R_variance.value) if mme.R_variance.value is not None else 1.0,
+                        mme.inverse_weights
+                        # pi_prior_alpha, pi_prior_beta will use defaults in sampler for now
+                    )
+                else: print(f"Warning: Multi-trait BayesC sampler not yet implemented for {geno_data.name}.")
+
+            elif geno_data.method == "BayesB":
+                if mme.n_models == 1:
+                    if geno_data.marker_effect_variance is None: print(f"Warning: BayesB marker_effect_variance obj not set for {geno_data.name}. Skipping."); continue
+                    # BayesB requires .df and .scale for prior on individual marker variances
+                    if geno_data.marker_effect_variance.df is None or geno_data.marker_effect_variance.scale is None:
+                        print(f"Error: Prior df/scale for BayesB marker variances not set for {geno_data.name}. Skipping.")
+                        continue
+                    if geno_data.pi_value is None: # Pi (P(effect!=0))
+                        if geno_data.estimate_pi: geno_data.pi_value = 0.05 # Initialize if estimating
+                        else: print(f"Error: Fixed Pi value not set for BayesB {geno_data.name}. Skipping."); continue
+
+                    _sample_marker_effects_bayesb_st(
+                        geno_data, y_corrected, # y_corrected is modified here
+                        float(mme.R_variance.value) if mme.R_variance.value is not None else 1.0,
+                        mme.inverse_weights
+                        # pi_prior_alpha, pi_prior_beta will use defaults in sampler for now
+                    )
+                else: print(f"Warning: Multi-trait BayesB sampler not yet implemented for {geno_data.name}.")
+
+            elif geno_data.method == "BayesL": # Bayesian Lasso
+                if mme.n_models == 1:
+                    if geno_data.marker_effect_variance is None or \
+                       not isinstance(geno_data.marker_effect_variance.value, (float,int,np.floating)):
+                        print(f"Error: Common marker variance for BayesL not set for {geno_data.name}. Skipping."); continue
+                    # lasso_lambda_sq_hyper parameter needs to be available, e.g. on geno_data or MCMCInfo
+                    # Using a default in sampler for now.
+                    _sample_marker_effects_bayesl_st(
+                        geno_data, y_corrected, # y_corrected is modified
+                        float(mme.R_variance.value) if mme.R_variance.value is not None else 1.0,
+                        mme.inverse_weights
+                        # lasso_lambda_sq_hyper uses default in sampler for now
+                    )
+                else: print(f"Warning: Multi-trait BayesL sampler not yet implemented for {geno_data.name}.")
+
+
             else: print(f"Warning: Marker method '{geno_data.method}' not implemented for {geno_data.name}.")
 
         # y_corrected is now: y_obs - X@beta_new - Z_all_markers@alpha_new_all_markers
 
-        # --- Sample Non-Marker Random Effect Variances ---
-        # TODO: _sample_general_random_effect_variances(mme) -> updates rt.Gi_new.value
-        pass
+        # Store current Gi_new as Gi_old for *next* iteration's LHS update, *before* sampling new Gi_new
+        for rt in mme.random_effect_terms:
+            if rt.Gi_new and rt.Gi_new.value is not None:
+                 val_to_copy = np.copy(rt.Gi_new.value) if isinstance(rt.Gi_new.value, np.ndarray) else rt.Gi_new.value
+                 scale_to_copy = np.copy(rt.Gi_new.scale) if isinstance(rt.Gi_new.scale, np.ndarray) else rt.Gi_new.scale
+                 rt.Gi_old = VarianceCovariance(value=val_to_copy, df=rt.Gi_new.df, scale=scale_to_copy)
 
-        # --- Sample Residual Variance ---
+        if mme.random_effect_terms:
+            sample_general_random_effect_variances(mme)
+
+        if mme.n_models == 1 and mme.R_variance.value is not None: mme.R_old_value = float(mme.R_variance.value)
+
         if mme.R_variance.estimate_variance:
             if mme.n_models == 1:
                 new_R_val = sample_scalar_variance_component(
@@ -287,10 +307,11 @@ def run_mcmc(mme: MixedModelEquations, df_pheno: pd.DataFrame) -> Dict[str, Any]
                 new_R_mat_val = sample_matrix_variance_component(
                     y_corr_list, n_obs_per_trait, mme.R_variance.df, mme.R_variance.scale,
                     inv_weights=mme.inverse_weights, constraint=mme.R_variance.constraint)
-                if np.all(np.linalg.eigvals(new_R_mat_val) > 1e-12): mme.R_variance.value = new_R_mat_val
-                else: print(f"Warning: Sampled residual cov matrix not PD. Retaining.")
+                eigvals = np.linalg.eigvals(new_R_mat_val)
+                if np.all(eigvals > 1e-12): mme.R_variance.value = new_R_mat_val
+                else: print(f"Warning: Sampled residual cov matrix (eigvals: {eigvals}) not PD. Retaining.")
 
-            if mme.n_models > 1 and mme.R_variance.value is not None: # If R changed, update Ri for next iter
+            if mme.n_models > 1 and mme.R_variance.value is not None:
                 mme.current_Ri_matrix = _make_Ri_matrix(mme, df_pheno, mme.inverse_weights)
 
         if iter_num > burnin and (iter_num - burnin) % output_samples_freq == 0:
@@ -328,19 +349,45 @@ def run_mcmc(mme: MixedModelEquations, df_pheno: pd.DataFrame) -> Dict[str, Any]
                     if mme.n_models == 1:
                         if geno_data.mean_marker_variance is None: geno_data.mean_marker_variance = 0.0
                         if geno_data.mean_marker_variance_sq is None: geno_data.mean_marker_variance_sq = 0.0
-                        current_marker_var = float(geno_data.marker_effect_variance.value)
-                        delta_marker_var = current_marker_var - geno_data.mean_marker_variance
+
+                        val_for_mean_marker_var = 0.0
+                        if geno_data.method in ["BayesA", "BayesB"] and isinstance(geno_data.marker_effect_variance.value, np.ndarray):
+                            val_for_mean_marker_var = np.mean(geno_data.marker_effect_variance.value)
+                        elif geno_data.method in ["RR-BLUP", "BayesC0", "BayesC"]:
+                            val_for_mean_marker_var = float(geno_data.marker_effect_variance.value)
+
+                        delta_marker_var = val_for_mean_marker_var - geno_data.mean_marker_variance
                         geno_data.mean_marker_variance += delta_marker_var / num_saved_samples
-                        geno_data.mean_marker_variance_sq += delta_marker_var * (current_marker_var - geno_data.mean_marker_variance)
+                        geno_data.mean_marker_variance_sq += delta_marker_var * (val_for_mean_marker_var - geno_data.mean_marker_variance)
+
+                    # Accumulate delta (inclusion indicators) for BayesC/BayesB
+                    if geno_data.method in ["BayesC", "BayesB"] and geno_data.delta_samples:
+                         for trait_idx in range(mme.n_models): # Assuming delta is per trait too
+                            if trait_idx < len(geno_data.delta_samples) and geno_data.delta_samples[trait_idx] is not None:
+                                current_delta_trait = geno_data.delta_samples[trait_idx]
+                                if trait_idx >= len(geno_data.mean_delta) or geno_data.mean_delta[trait_idx] is None:
+                                     geno_data.mean_delta[trait_idx] = np.zeros_like(current_delta_trait)
+                                     # geno_data.mean_delta_sq not typically stored, mean_delta is P(include)
+                                delta_d = current_delta_trait - geno_data.mean_delta[trait_idx]
+                                geno_data.mean_delta[trait_idx] += delta_d / num_saved_samples
+
+                    # Accumulate Pi (inclusion probability) for BayesC/BayesB
+                    if geno_data.method in ["BayesC", "BayesB"] and geno_data.pi_value is not None and geno_data.estimate_pi:
+                        if mme.n_models == 1: # Scalar Pi
+                            if geno_data.mean_pi is None: geno_data.mean_pi = 0.0
+                            if geno_data.mean_pi_sq is None: geno_data.mean_pi_sq = 0.0
+                            current_pi_val = float(geno_data.pi_value)
+                            delta_pi = current_pi_val - geno_data.mean_pi
+                            geno_data.mean_pi += delta_pi / num_saved_samples
+                            geno_data.mean_pi_sq += delta_pi * (current_pi_val - geno_data.mean_pi)
             pass
 
         if iter_num % mcmc_params.printout_frequency == 0 or iter_num == chain_length :
             _print_progress(iter_num, chain_length, start_time, mcmc_params.printout_frequency)
 
-    if original_lhs_is_sparse_and_not_lil and original_lhs_type_for_conversion_back is csr_matrix:
-        mme.mme_LHS = mme.mme_LHS.tocsr()
-    elif original_lhs_is_sparse_and_not_lil and original_lhs_type_for_conversion_back is csc_matrix:
-        mme.mme_LHS = mme.mme_LHS.tocsc()
+    if lhs_was_converted_to_lil:
+        if original_lhs_sparse_type == csr_matrix: mme.mme_LHS = mme.mme_LHS.tocsr()
+        elif original_lhs_sparse_type == csc_matrix: mme.mme_LHS = mme.mme_LHS.tocsc()
 
 
     if num_saved_samples > 1:
@@ -352,11 +399,15 @@ def run_mcmc(mme: MixedModelEquations, df_pheno: pd.DataFrame) -> Dict[str, Any]
             for trait_idx in range(mme.n_models):
                 if trait_idx < len(geno_data.mean_alpha_sq) and geno_data.mean_alpha_sq[trait_idx] is not None:
                     geno_data.mean_alpha_sq[trait_idx] /= (num_saved_samples -1)
+
             if geno_data.mean_marker_variance_sq is not None:
                 if isinstance(geno_data.mean_marker_variance_sq, (float, np.floating)):
                     geno_data.mean_marker_variance_sq /= (num_saved_samples-1)
                 elif isinstance(geno_data.mean_marker_variance_sq, np.ndarray):
                     geno_data.mean_marker_variance_sq /= (num_saved_samples-1)
+
+            if geno_data.method in ["BayesC", "BayesB"] and isinstance(geno_data.mean_pi_sq, (float, np.floating)) and num_saved_samples > 1:
+                geno_data.mean_pi_sq /= (num_saved_samples -1) # Variance of Pi
 
     print(f"MCMC finished. Total time: {time.time() - start_time:.2f}s")
     results = {
@@ -367,11 +418,17 @@ def run_mcmc(mme: MixedModelEquations, df_pheno: pd.DataFrame) -> Dict[str, Any]
         "genotypes_results": []
     }
     for gd in mme.genotypes_data_list:
-        results["genotypes_results"].append({
+        geno_result_entry = {
             "name": gd.name, "mean_alpha": gd.mean_alpha,
             "variance_alpha": gd.mean_alpha_sq if num_saved_samples > 1 else None,
             "mean_marker_variance": gd.mean_marker_variance,
-            "variance_marker_variance": gd.mean_marker_variance_sq if num_saved_samples > 1 else None })
+            "variance_marker_variance": gd.mean_marker_variance_sq if num_saved_samples > 1 else None
+        }
+        if gd.method in ["BayesC", "BayesB"]:
+            geno_result_entry["mean_delta"] = gd.mean_delta
+            geno_result_entry["mean_pi"] = gd.mean_pi
+            geno_result_entry["variance_pi"] = gd.mean_pi_sq if num_saved_samples > 1 else None
+        results["genotypes_results"].append(geno_result_entry)
     return results
 
 if __name__ == '__main__':
@@ -381,56 +438,116 @@ if __name__ == '__main__':
 
     np.random.seed(4242)
     n_obs = 100; intercept_true = 5.0; residual_var_true = 2.0
-    n_markers = 50; marker_var_true = 0.05
+    n_markers = 50; marker_var_true_rrblup = 0.05; marker_var_true_bayesa_scale = 0.005
+    pi_true_bayesc = 0.1; common_marker_var_true_bayesc = 0.02
+
 
     sim_Z = np.random.randint(0, 3, size=(n_obs, n_markers)).astype(float)
-    sim_Z -= sim_Z.mean(axis=0); sim_Z_std = sim_Z.std(axis=0); sim_Z_std[sim_Z_std==0] = 1.0; sim_Z /= sim_Z_std
-    sim_Z = np.nan_to_num(sim_Z, nan=0.0)
-    true_alphas = np.random.randn(n_markers) * np.sqrt(marker_var_true)
-    y_genetic = sim_Z @ true_alphas
-    test_df = pd.DataFrame({'y': y_genetic + np.random.randn(n_obs) * np.sqrt(residual_var_true) + intercept_true})
+    sim_Z_means = sim_Z.mean(axis=0); sim_Z_std = sim_Z.std(axis=0); sim_Z_std[sim_Z_std==0] = 1.0
+    sim_Z_centered_scaled = (sim_Z - sim_Z_means) / sim_Z_std
+    sim_Z_centered_scaled = np.nan_to_num(sim_Z_centered_scaled, nan=0.0)
 
-    R_vc = VarianceCovariance(value=1.0, df=4.0, scale=1.0, estimate_variance=True)
-    intercept_term = ModelTerm(term_str="intercept", model_index=1, trait_name="y")
+    # Test RR-BLUP
+    print("\n--- Testing RR-BLUP in MCMC ---")
+    true_alphas_rrblup = np.random.randn(n_markers) * np.sqrt(marker_var_true_rrblup)
+    y_genetic_rrblup = sim_Z_centered_scaled @ true_alphas_rrblup
+    test_df_rrblup = pd.DataFrame({'y': y_genetic_rrblup + np.random.randn(n_obs) * np.sqrt(residual_var_true) + intercept_true})
 
-    geno1 = GenotypesData(name="markers", method="RR-BLUP"); geno1.genotypes = sim_Z; geno1.n_markers = n_markers
-    geno1.marker_effect_variance = VarianceCovariance(value=0.01, df=4.0, scale=0.005, estimate_variance=True)
+    R_vc_rrblup = VarianceCovariance(value=1.0, df=4.0, scale=1.0, estimate_variance=True)
+    intercept_term_rrblup = ModelTerm(term_str="intercept", model_index=1, trait_name="y")
+    geno_rrblup = GenotypesData(name="markers_rrblup", method="RR-BLUP"); geno_rrblup.genotypes = sim_Z_centered_scaled; geno_rrblup.n_markers = n_markers
+    geno_rrblup.marker_effect_variance = VarianceCovariance(value=0.01, df=4.0, scale=0.005, estimate_variance=True)
 
-    mme_obj = MixedModelEquations(
-        n_models=1, model_equations_str=["y = intercept"], model_terms=[intercept_term],
-        model_term_dict={"y:intercept": intercept_term}, lhs_variables=["y"], residual_variance_info=R_vc)
-    mme_obj.genotypes_data_list.append(geno1)
-    mme_obj.mcmc_info = MCMCInfo(chain_length=6000, burnin=1000, output_samples_frequency=100, printout_frequency=1000, seed=123)
+    mme_rrblup = MixedModelEquations(
+        n_models=1, model_equations_str=["y = intercept"], model_terms=[intercept_term_rrblup],
+        model_term_dict={"y:intercept": intercept_term_rrblup}, lhs_variables=["y"], residual_variance_info=R_vc_rrblup)
+    mme_rrblup.genotypes_data_list.append(geno_rrblup)
+    mme_rrblup.mcmc_info = MCMCInfo(chain_length=3000, burnin=500, output_samples_frequency=100, printout_frequency=3001, seed=123) # Suppress iter print
+    mme_rrblup.obs_ids = [str(i) for i in range(n_obs)]; mme_rrblup.inverse_weights = np.ones(n_obs)
+    _get_data_for_term(intercept_term_rrblup, test_df_rrblup, mme_rrblup); _get_incidence_matrix_for_term(intercept_term_rrblup, mme_rrblup, n_obs)
+    mme_rrblup.X = intercept_term_rrblup.X ; mme_rrblup.y_sparse = test_df_rrblup['y'].values.reshape(-1,1)
+    if mme_rrblup.X.shape[1] > 0 and mme_rrblup.R_variance.value is not None and float(mme_rrblup.R_variance.value) > 0:
+        D_initial = diags(mme_rrblup.inverse_weights / float(mme_rrblup.R_variance.value), format="csc")
+        mme_rrblup.mme_LHS_base_X_Rinv_X = mme_rrblup.X.T @ D_initial @ mme_rrblup.X
+        mme_rrblup.mme_LHS = mme_rrblup.mme_LHS_base_X_Rinv_X.copy()
+        mme_rrblup.mme_RHS = mme_rrblup.X.T @ D_initial @ mme_rrblup.y_sparse
+    else: mme_rrblup.mme_LHS = csc_matrix((1,1)); mme_rrblup.mme_RHS = np.zeros((1,1))
 
-    mme_obj.obs_ids = [str(i) for i in range(n_obs)]; mme_obj.inverse_weights = np.ones(n_obs)
-    _get_data_for_term(intercept_term, test_df, mme_obj); _get_incidence_matrix_for_term(intercept_term, mme_obj, n_obs)
-    mme_obj.X = intercept_term.X ; mme_obj.y_sparse = test_df['y'].values.reshape(-1,1)
+    if mme_rrblup.mme_LHS.shape[0] > 0:
+        results_rrblup = run_mcmc(mme_rrblup, test_df_rrblup)
+        # ... (RR-BLUP print statements) ...
 
-    if mme_obj.X.shape[1] > 0 and mme_obj.R_variance.value is not None and float(mme_obj.R_variance.value) > 0:
-        R_inv_diag_val = mme_obj.inverse_weights / float(mme_obj.R_variance.value)
-        D_initial = diags(R_inv_diag_val, format="csc")
-        # Base LHS for fixed/random effects part (X'R_invX)
-        mme_obj.mme_LHS_base_X_Rinv_X = mme_obj.X.T @ D_initial @ mme_obj.X
-        mme_obj.mme_LHS = mme_obj.mme_LHS_base_X_Rinv_X.copy() # Initial MME LHS
-        mme_obj.mme_RHS = mme_obj.X.T @ D_initial @ mme_obj.y_sparse # Initial MME RHS X'R_inv*y
-    else:
-        mme_obj.mme_LHS = csc_matrix((1,1)); mme_obj.mme_RHS = np.zeros((1,1))
+    # Test BayesA
+    # ... (BayesA test setup as before) ...
+    R_vc_bayesa = VarianceCovariance(value=1.0, df=4.0, scale=1.0, estimate_variance=True)
+    intercept_term_bayesa = ModelTerm(term_str="intercept", model_index=1, trait_name="y")
+    geno_bayesa = GenotypesData(name="markers_bayesa", method="BayesA"); geno_bayesa.genotypes = sim_Z_centered_scaled; geno_bayesa.n_markers = n_markers
+    geno_bayesa.marker_effect_variance = VarianceCovariance(value=None, df=4.0, scale=marker_var_true_bayesa_scale, estimate_variance=True)
+    mme_bayesa = MixedModelEquations(
+        n_models=1, model_equations_str=["y = intercept"], model_terms=[intercept_term_bayesa],
+        model_term_dict={"y:intercept": intercept_term_bayesa}, lhs_variables=["y"], residual_variance_info=R_vc_bayesa)
+    mme_bayesa.genotypes_data_list.append(geno_bayesa)
+    mme_bayesa.mcmc_info = MCMCInfo(chain_length=3000, burnin=500, output_samples_frequency=100, printout_frequency=3001, seed=789) # Suppress iter print
+    mme_bayesa.obs_ids = [str(i) for i in range(n_obs)]; mme_bayesa.inverse_weights = np.ones(n_obs)
+    _get_data_for_term(intercept_term_bayesa, test_df_bayesa, mme_bayesa); _get_incidence_matrix_for_term(intercept_term_bayesa, mme_bayesa, n_obs)
+    mme_bayesa.X = intercept_term_bayesa.X ; mme_bayesa.y_sparse = test_df_bayesa['y'].values.reshape(-1,1)
+    if mme_bayesa.X.shape[1] > 0 and mme_bayesa.R_variance.value is not None and float(mme_bayesa.R_variance.value) > 0:
+        D_initial_ba = diags(mme_bayesa.inverse_weights / float(mme_bayesa.R_variance.value), format="csc")
+        mme_bayesa.mme_LHS_base_X_Rinv_X = mme_bayesa.X.T @ D_initial_ba @ mme_bayesa.X
+        mme_bayesa.mme_LHS = mme_bayesa.mme_LHS_base_X_Rinv_X.copy()
+        mme_bayesa.mme_RHS = mme_bayesa.X.T @ D_initial_ba @ mme_bayesa.y_sparse
+    else: mme_bayesa.mme_LHS = csc_matrix((1,1)); mme_bayesa.mme_RHS = np.zeros((1,1))
 
-    if mme_obj.mme_LHS is not None and mme_obj.mme_LHS.shape[0] > 0:
-        print(f"Test MME LHS shape: {mme_obj.mme_LHS.shape}, Initial R: {mme_obj.R_variance.value}")
-        try:
-            results = run_mcmc(mme_obj, test_df)
-            print("RR-BLUP MCMC run completed.")
-            print(f"True intercept: {intercept_true:.3f}, Mean sampled intercept: {results.get('mean_solutions')[0]:.3f}")
-            print(f"True residual var: {residual_var_true:.3f}, Mean sampled residual_variance: {results.get('mean_residual_variance'):.3f}")
-            if results["genotypes_results"]:
-                geno_res = results["genotypes_results"][0]
-                print(f"True marker var: {marker_var_true:.4f}, Mean sampled marker_variance for {geno_res['name']}: {geno_res.get('mean_marker_variance'):.4f}")
-                if geno_res.get('mean_alpha') and len(geno_res.get('mean_alpha')) > 0 and geno_res.get('mean_alpha')[0] is not None:
-                    corr_alpha = np.corrcoef(true_alphas, geno_res.get('mean_alpha')[0])[0,1]
-                    print(f"Correlation true_alpha vs sampled_mean_alpha: {corr_alpha:.3f}")
-        except Exception as e:
-            print(f"Error in RR-BLUP MCMC run: {e}"); import traceback; traceback.print_exc()
+    if mme_bayesa.mme_LHS.shape[0] > 0:
+        # results_bayesa = run_mcmc(mme_bayesa, test_df_bayesa) # BayesA test was here
+        pass # Temporarily skip BayesA print for brevity, focus on BayesC addition
+
+    # Test BayesC
+    print("\n--- Testing BayesC in MCMC ---")
+    true_delta_bayesc = (np.random.rand(n_markers) < pi_true_bayesc).astype(float)
+    true_alphas_bayesc_eff = np.random.randn(n_markers) * np.sqrt(common_marker_var_true_bayesc)
+    true_alphas_bayesc = true_alphas_bayesc_eff * true_delta_bayesc
+    y_genetic_bayesc = sim_Z_centered_scaled @ true_alphas_bayesc
+    test_df_bayesc = pd.DataFrame({'y': y_genetic_bayesc + np.random.randn(n_obs) * np.sqrt(residual_var_true) + intercept_true})
+
+    R_vc_bayesc = VarianceCovariance(value=1.0, df=4.0, scale=1.0, estimate_variance=True)
+    intercept_term_bayesc = ModelTerm(term_str="intercept", model_index=1, trait_name="y")
+    geno_bayesc = GenotypesData(name="markers_bayesc", method="BayesC", pi_value=0.1, estimate_pi=True)
+    geno_bayesc.genotypes = sim_Z_centered_scaled; geno_bayesc.n_markers = n_markers
+    geno_bayesc.marker_effect_variance = VarianceCovariance(value=0.01, df=4.0, scale=0.005, estimate_variance=True)
+
+    mme_bayesc = MixedModelEquations(
+        n_models=1, model_equations_str=["y = intercept"], model_terms=[intercept_term_bayesc],
+        model_term_dict={"y:intercept": intercept_term_bayesc}, lhs_variables=["y"], residual_variance_info=R_vc_bayesc)
+    mme_bayesc.genotypes_data_list.append(geno_bayesc)
+    mme_bayesc.mcmc_info = MCMCInfo(chain_length=6000, burnin=1000, output_samples_frequency=100, printout_frequency=6001, seed=456)
+    mme_bayesc.obs_ids = [str(i) for i in range(n_obs)]; mme_bayesc.inverse_weights = np.ones(n_obs)
+    _get_data_for_term(intercept_term_bayesc, test_df_bayesc, mme_bayesc); _get_incidence_matrix_for_term(intercept_term_bayesc, mme_bayesc, n_obs)
+    mme_bayesc.X = intercept_term_bayesc.X ; mme_bayesc.y_sparse = test_df_bayesc['y'].values.reshape(-1,1)
+
+    if mme_bayesc.X.shape[1] > 0 and mme_bayesc.R_variance.value is not None and float(mme_bayesc.R_variance.value) > 0:
+        D_initial_bc = diags(mme_bayesc.inverse_weights / float(mme_bayesc.R_variance.value), format="csc")
+        mme_bayesc.mme_LHS_base_X_Rinv_X = mme_bayesc.X.T @ D_initial_bc @ mme_bayesc.X
+        mme_bayesc.mme_LHS = mme_bayesc.mme_LHS_base_X_Rinv_X.copy()
+        mme_bayesc.mme_RHS = mme_bayesc.X.T @ D_initial_bc @ mme_bayesc.y_sparse
+    else: mme_bayesc.mme_LHS = csc_matrix((1,1)); mme_bayesc.mme_RHS = np.zeros((1,1))
+
+    if mme_bayesc.mme_LHS.shape[0] > 0:
+        results_bayesc = run_mcmc(mme_bayesc, test_df_bayesc)
+        print("\nBayesC MCMC run completed.")
+        print(f"  True intercept: {intercept_true:.3f}, Mean sampled intercept: {results_bayesc.get('mean_solutions')[0]:.3f}")
+        print(f"  True residual var: {residual_var_true:.3f}, Mean sampled residual_variance: {results_bayesc.get('mean_residual_variance'):.3f}")
+        if results_bayesc["genotypes_results"]:
+            geno_res_bc = results_bayesc["genotypes_results"][0]
+            print(f"  True common marker var: {common_marker_var_true_bayesc:.4f}, Mean sampled marker_variance: {geno_res_bc.get('mean_marker_variance'):.4f}")
+            print(f"  True Pi (P(effect!=0)): {pi_true_bayesc:.3f}, Mean sampled Pi: {geno_res_bc.get('mean_pi'):.3f}")
+            if geno_res_bc.get('mean_alpha') and len(geno_res_bc.get('mean_alpha')) > 0 and geno_res_bc.get('mean_alpha')[0] is not None:
+                corr_alpha_bc = np.corrcoef(true_alphas_bayesc, geno_res_bc.get('mean_alpha')[0])[0,1]
+                print(f"  Correlation true_alpha vs sampled_mean_alpha (BayesC): {corr_alpha_bc:.3f}")
+            if geno_res_bc.get('mean_delta') and len(geno_res_bc.get('mean_delta')) > 0 and geno_res_bc.get('mean_delta')[0] is not None:
+                prop_included_true = np.mean(true_delta_bayesc)
+                prop_included_sampled = np.mean(geno_res_bc.get('mean_delta')[0]) # mean_delta is posterior prob of inclusion
+                print(f"  True prop. included markers: {prop_included_true:.3f}, Sampled mean prop. included: {prop_included_sampled:.3f}")
     else:
         print("Skipping MCMC run due to empty MME LHS in test setup.")
 

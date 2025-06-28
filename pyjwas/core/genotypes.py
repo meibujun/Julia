@@ -88,10 +88,14 @@ class GenotypesData:
         self.mean_alpha_sq: List[np.ndarray] = [] # For variance calculation: E[x^2]
         self.mean_delta: List[np.ndarray] = []
 
-        self.mean_pi: Optional[Union[float, Dict[Any, float]]] = None
-        self.mean_pi_sq: Optional[Union[float, Dict[Any, float]]] = None # E[pi^2]
+        self.mean_pi: Optional[Union[float, Dict[Any, float]]] = None # For ST, this is scalar. For MT, dict.
+        self.mean_pi_sq: Optional[Union[float, Dict[Any, float]]] = None
 
-        self.mean_marker_variance: Optional[Union[float, np.ndarray]] = None # Posterior mean of Mi.G.val
+        # For BayesA, marker_effect_variance.value is an array of sigma_g_j^2.
+        # mean_marker_variance would then be an array of means for each sigma_g_j^2.
+        # For BayesC/RRBLUP, marker_effect_variance.value is a scalar sigma_g^2.
+        # mean_marker_variance is scalar mean of this common sigma_g^2.
+        self.mean_marker_variance: Optional[Union[float, np.ndarray]] = None
         self.mean_marker_variance_sq: Optional[Union[float, np.ndarray]] = None
 
         self.mean_scale_marker_variance: Optional[Union[float, np.ndarray]] = None # Posterior mean of Mi.G.scale
@@ -110,34 +114,56 @@ class GenotypesData:
         self.n_traits_model = n_traits
         self.n_loci_model = n_markers_in_model
 
-        self.alpha_samples = [np.zeros(n_markers_in_model) for _ in range(n_traits)]
-        self.beta_samples = [np.zeros(n_markers_in_model) for _ in range(n_traits)]
-        self.delta_samples = [np.ones(n_markers_in_model) for _ in range(n_traits)] # Often start as all included
+        self.alpha_samples = [np.zeros(n_markers_in_model, dtype=np.float64) for _ in range(n_traits)]
+        self.beta_samples = [np.zeros(n_markers_in_model, dtype=np.float64) for _ in range(n_traits)] # Used by BayesB/C logic
+        self.delta_samples = [np.ones(n_markers_in_model, dtype=np.float64) for _ in range(n_traits)] # Inclusion indicator
 
-        self.mean_alpha = [np.zeros(n_markers_in_model) for _ in range(n_traits)]
-        self.mean_alpha_sq = [np.zeros(n_markers_in_model) for _ in range(n_traits)]
-        self.mean_delta = [np.zeros(n_markers_in_model) for _ in range(n_traits)]
+        self.mean_alpha = [np.zeros(n_markers_in_model, dtype=np.float64) for _ in range(n_traits)]
+        self.mean_alpha_sq = [np.zeros(n_markers_in_model, dtype=np.float64) for _ in range(n_traits)]
+        self.mean_delta = [np.zeros(n_markers_in_model, dtype=np.float64) for _ in range(n_traits)]
 
-        if isinstance(self.pi_value, float) or self.pi_value is None:
+        # Pi (inclusion probability P(effect!=0))
+        if n_traits == 1:
             self.mean_pi = 0.0
             self.mean_pi_sq = 0.0
-        elif isinstance(self.pi_value, dict):
-            self.mean_pi = {k: 0.0 for k in self.pi_value}
-            self.mean_pi_sq = {k: 0.0 for k in self.pi_value}
+        else: # multi-trait Pi is a dict
+            if isinstance(self.pi_value, dict):
+                self.mean_pi = {k: 0.0 for k in self.pi_value}
+                self.mean_pi_sq = {k: 0.0 for k in self.pi_value}
+            else: # Default for MT if pi_value was not dict (should be set up before here)
+                self.mean_pi = {}
+                self.mean_pi_sq = {}
 
-        # Initialize variance storage based on expected type (scalar or array for multi-trait)
-        if n_traits == 1:
-            self.mean_marker_variance = 0.0
-            self.mean_marker_variance_sq = 0.0
-            if self.marker_effect_variance and isinstance(self.marker_effect_variance.scale, float):
-                 self.mean_scale_marker_variance = 0.0
-                 self.mean_scale_marker_variance_sq = 0.0
-        else: # multi-trait
-            self.mean_marker_variance = np.zeros((n_traits, n_traits))
-            self.mean_marker_variance_sq = np.zeros((n_traits, n_traits))
-            if self.marker_effect_variance and isinstance(self.marker_effect_variance.scale, np.ndarray):
+        # Marker effect variance (sigma_g^2 or array of sigma_g_j^2)
+        # Determine if it's scalar (RRBLUP, BayesC) or array (BayesA, BayesB)
+        # This depends on how self.marker_effect_variance.value is initialized by the method setup.
+        # For now, initialize based on n_traits for flexibility.
+        if self.method in ["BayesA", "BayesB"]: # Per-marker variances
+            self.mean_marker_variance = [np.zeros(n_markers_in_model, dtype=np.float64) for _ in range(n_traits)]
+            self.mean_marker_variance_sq = [np.zeros(n_markers_in_model, dtype=np.float64) for _ in range(n_traits)]
+        else: # Common variance (RRBLUP, BayesC) or matrix for MT GBLUP
+            if n_traits == 1:
+                self.mean_marker_variance = 0.0
+                self.mean_marker_variance_sq = 0.0
+            else: # Multi-trait common variance (matrix)
+                self.mean_marker_variance = np.zeros((n_traits, n_traits), dtype=np.float64)
+                self.mean_marker_variance_sq = np.zeros((n_traits, n_traits), dtype=np.float64)
+
+        # Prior scale for marker effect variance (Mi.G.scale)
+        # This is typically scalar for ST methods, or matrix for MT.
+        if self.marker_effect_variance and self.marker_effect_variance.scale is not None:
+            if isinstance(self.marker_effect_variance.scale, (float, int)):
+                self.mean_scale_marker_variance = 0.0
+                self.mean_scale_marker_variance_sq = 0.0
+            elif isinstance(self.marker_effect_variance.scale, np.ndarray):
                  self.mean_scale_marker_variance = np.zeros_like(self.marker_effect_variance.scale)
                  self.mean_scale_marker_variance_sq = np.zeros_like(self.marker_effect_variance.scale)
+            else: # Default if scale type is unknown
+                self.mean_scale_marker_variance = None
+                self.mean_scale_marker_variance_sq = None
+        else:
+            self.mean_scale_marker_variance = None
+            self.mean_scale_marker_variance_sq = None
 
 
 if __name__ == '__main__':

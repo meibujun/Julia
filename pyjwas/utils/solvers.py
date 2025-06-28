@@ -36,6 +36,9 @@ def gibbs_sample_solution_in_place(
 
     variance_scale = residual_variance if residual_variance is not None else 1.0
 
+    # NUMBA_TARGET: This loop is a candidate for Numba JIT compilation if n_eqs is large.
+    # Numba would require A to be a NumPy array or a supported sparse format if sparse.
+    # Type hints for A (Union[np.ndarray, spmatrix]) might need adjustment for Numba.
     for i in range(n_eqs):
         A_ii = A[i, i]
         if A_ii == 0.0:

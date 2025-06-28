@@ -1,7 +1,7 @@
 from typing import List, Any, Tuple, Dict, Optional, Union
 import numpy as np
 import pandas as pd
-from scipy.sparse import spmatrix, hstack, lil_matrix, diags, csc_matrix, csr_matrix
+from scipy.sparse import spmatrix, hstack, lil_matrix, diags, csc_matrix, csr_matrix, block_diag
 
 from .model_term import ModelTerm
 from .variance_covariance import VarianceCovariance
@@ -697,16 +697,47 @@ def _make_Ri_matrix(mme: MixedModelEquations, df: pd.DataFrame, invweights: np.n
         # scipy.linalg.block_diag can be used if blocks are pre-scaled.
 
         # Fallback to a less efficient but conceptually simpler construction for now:
-        # This is a placeholder for the true mkRi logic.
-        # The true mkRi in Julia iterates through unique missing patterns.
-        print("Warning: _make_Ri_matrix for unconstrained multi-trait is simplified and does not fully handle missing data patterns like JWAS.jl's mkRi yet.")
-        if np.all(invweights == 1.0):
-            return csc_matrix(np.kron(np.eye(n_obs_per_trait), R_inv_full))
-        else:
-            # If weights are heterogeneous, it's more complex.
-            # Each (n_traits x n_traits) diagonal block is invweights[i] * R_inv_full.
-            # This is equivalent to kron(diag(invweights), R_inv_full)
-            return csc_matrix(np.kron(np.diag(invweights), R_inv_full))
+    # This is the complex case. Uses mme.residual_variance_handler (ResVar equivalent).
+    if mme.residual_variance_handler is None:
+        # Initialize if not present, using the current full R matrix from mme.R_variance
+        from .residual_variance import ResidualVariance # Local import to avoid circularity at module load if files are structured differently
+        if mme.R_variance.value is None:
+            raise ValueError("mme.R_variance.value (full R matrix) must be set to initialize ResidualVariance handler for Ri construction.")
+        mme.residual_variance_handler = ResidualVariance(r0_matrix=np.copy(mme.R_variance.value))
+
+    # If mme.R_variance.value (the full R matrix) has changed since the handler's r0_full_R_matrix was last set,
+    # the cache in ri_pattern_inverses might be stale. Clear it.
+    # This check ensures that get_or_compute_R_inv_for_pattern uses the current R.
+    if mme.residual_variance_handler.r0_full_R_matrix is None or \
+       not np.array_equal(mme.residual_variance_handler.r0_full_R_matrix, mme.R_variance.value):
+        # print("DEBUG: R matrix changed, clearing Ri pattern cache.")
+        mme.residual_variance_handler.ri_pattern_inverses.clear()
+        mme.residual_variance_handler.r0_full_R_matrix = np.copy(mme.R_variance.value)
+
+
+    observed_mask_df = df[mme.lhs_variables].notna() # DataFrame of bools (n_obs x n_traits)
+
+    list_of_R_inv_blocks: List[spmatrix] = []
+
+    for k in range(n_obs_per_trait):
+        pattern_k = tuple(observed_mask_df.iloc[k].values)
+
+        # Get the (n_traits x n_traits) R_inv block for this pattern
+        # This R_inv_pattern_k has zeros for missing traits' rows/columns
+        R_inv_pattern_k_full_dim = mme.residual_variance_handler.get_or_compute_R_inv_for_pattern(
+            pattern_k,
+            mme.R_variance.value # Pass current full R matrix
+        )
+
+        # Scale this block by the observation-specific inverse weight
+        block_k_scaled = R_inv_pattern_k_full_dim * invweights[k]
+        list_of_R_inv_blocks.append(csc_matrix(block_k_scaled)) # Ensure sparse for block_diag
+
+    # Construct the large block-diagonal Ri matrix
+    if not list_of_R_inv_blocks: # Should not happen if n_obs_per_trait > 0
+        return csc_matrix((total_rows, total_rows))
+
+    return block_diag(list_of_R_inv_blocks, format="csc")
 
 
 def get_mme_components(mme: MixedModelEquations, df: pd.DataFrame):
