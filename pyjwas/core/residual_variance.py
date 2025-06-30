@@ -49,56 +49,53 @@ class ResidualVariance:
             An (n_traits x n_traits) matrix where the block corresponding to observed
             traits contains the inverse of that sub-block of R, and other elements are zero.
         """
+        current_R_matrix_to_use = full_R_matrix if full_R_matrix is not None else self.r0_full_R_matrix
+        if current_R_matrix_to_use is None:
+            raise ValueError("Full R matrix (r0_full_R_matrix or argument) must be provided.")
+
+        # Check if cache is valid or needs clearing
+        if self.r0_full_R_matrix is not None and \
+           not np.array_equal(self.r0_full_R_matrix, current_R_matrix_to_use):
+            # print(f"DEBUG: R matrix changed. Clearing Ri_pattern_inverses cache.")
+            self.ri_pattern_inverses.clear()
+
+        # Update the internal r0_full_R_matrix if it's None or has changed
+        if self.r0_full_R_matrix is None or \
+           not np.array_equal(self.r0_full_R_matrix, current_R_matrix_to_use):
+            self.r0_full_R_matrix = np.copy(current_R_matrix_to_use)
+
         if pattern in self.ri_pattern_inverses:
-            # TODO: Add a check if full_R_matrix has changed since this was cached.
-            # For now, assume if cached, it's valid for the R0 it was built with.
-            # If self.r0_full_R_matrix is not None and full_R_matrix is not None and
-            # not np.array_equal(self.r0_full_R_matrix, full_R_matrix):
-            # print("Warning: full_R_matrix changed, but returning cached R_inv_for_pattern.")
             return self.ri_pattern_inverses[pattern]
 
-        current_R_matrix = full_R_matrix if full_R_matrix is not None else self.r0_full_R_matrix
-        if current_R_matrix is None:
-            raise ValueError("Full R matrix (r0_full_R_matrix or argument) must be provided to compute pattern inverse.")
-
-        n_traits = current_R_matrix.shape[0]
+        n_traits = current_R_matrix_to_use.shape[0]
         if len(pattern) != n_traits:
             raise ValueError(f"Pattern length {len(pattern)} does not match R matrix dimension {n_traits}.")
 
         observed_indices = np.where(pattern)[0]
-        if len(observed_indices) == 0: # All traits missing for this pattern
-            # Return a zero matrix of appropriate size, as there's no information.
+        if len(observed_indices) == 0:
             RZ = np.zeros((n_traits, n_traits))
             self.ri_pattern_inverses[pattern] = RZ
             return RZ
 
-        R_sub_observed = current_R_matrix[np.ix_(observed_indices, observed_indices)]
+        R_sub_observed = current_R_matrix_to_use[np.ix_(observed_indices, observed_indices)]
 
+        RZ = np.zeros((n_traits, n_traits)) # Initialize full size zero matrix
         try:
-            R_sub_observed_inv = np.linalg.inv(R_sub_observed)
+            if R_sub_observed.size > 0: # Ensure sub-matrix is not empty
+                R_sub_observed_inv = np.linalg.inv(R_sub_observed)
+                # Place the inverted sub-matrix into RZ
+                for i_local, r_global_idx in enumerate(observed_indices):
+                    for j_local, c_global_idx in enumerate(observed_indices):
+                        RZ[r_global_idx, c_global_idx] = R_sub_observed_inv[i_local, j_local]
+            # If R_sub_observed is empty (e.g. pattern has no True but observed_indices somehow not empty), RZ remains zero
         except np.linalg.LinAlgError:
-            # Sub-matrix is singular, cannot invert. This implies issues with R or pattern.
-            # Fallback: use pseudo-inverse or return matrix of zeros/large values?
-            # For now, error or return zeros. JWAS might handle this differently.
-            # Let's return a zero matrix for this pattern's contribution.
-            print(f"Warning: Sub-matrix of R for pattern {pattern} is singular. Using zero block.")
-            RZ = np.zeros((n_traits, n_traits))
-            self.ri_pattern_inverses[pattern] = RZ
-            return RZ
-
-        RZ = np.zeros((n_traits, n_traits))
-        for i, r_idx in enumerate(observed_indices):
-            for j, c_idx in enumerate(observed_indices):
-                RZ[r_idx, c_idx] = R_sub_observed_inv[i, j]
+            print(f"Warning: Sub-matrix of R for pattern {pattern} is singular. Using zero block for this pattern.")
+            # RZ is already zeros, so this pattern contributes nothing.
 
         self.ri_pattern_inverses[pattern] = RZ
-        # Update the r0_full_R_matrix if this is the first computation or if full_R_matrix was new
-        if self.r0_full_R_matrix is None or (full_R_matrix is not None and not np.array_equal(self.r0_full_R_matrix, full_R_matrix)):
-            self.r0_full_R_matrix = np.copy(full_R_matrix)
-
         return RZ
 
-    # Keep old methods for compatibility or remove if get_or_compute replaces them fully
+    # get_ri_matrix and set_ri_matrix might be deprecated if get_or_compute_R_inv_for_pattern is sufficient
     def get_ri_matrix(self, missing_pattern: Tuple[bool, ...]) -> Optional[np.ndarray]:
         return self.ri_pattern_inverses.get(missing_pattern)
 

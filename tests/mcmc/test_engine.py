@@ -177,6 +177,218 @@ class TestMCMCEngine(unittest.TestCase):
         else:
             self.fail("Mean alpha not found in results.")
 
+
+    def test_run_mcmc_animal_model_simple(self):
+        """Test MCMC for a simple animal model: y = mu + animal + e."""
+        from pyjwas.pedigree import read_pedigree, calculate_A_inverse # Local import for test setup
+
+        # 1. Setup Pedigree
+        ped_content = """
+        A1,0,0
+        A2,0,0
+        A3,A1,A2
+        A4,A1,A2
+        A5,A3,0
+        A6,A3,A4
+        """
+        # Create a dummy pedigree file
+        dummy_ped_path = "test_animal_model_ped.csv"
+        with open(dummy_ped_path, "w") as f: f.write(ped_content.strip())
+
+        ped_data = read_pedigree(dummy_ped_path)
+        A_inv = calculate_A_inverse(ped_data)
+        animal_ids_ordered = ped_data.get_ordered_ids_str()
+        n_animals = len(animal_ids_ordered)
+
+        # 2. Simulate Data
+        intercept_true = 10.0
+        sigma_a_true = 1.5  # Polygenic variance
+        sigma_e_true = 3.0  # Residual variance
+
+        # Simulate animal effects: u ~ N(0, A * sigma_a_true)
+        # Need A matrix for simulation. A_inv is for estimation.
+        # For simplicity, let's assume A = I for simulation of u, so u ~ N(0, I*sigma_a_true)
+        # This is a simplification; true u should use full A.
+        # A more correct simulation would sample from MVN(0, A*sigma_a_true).
+        # For now, iid animal effects for test simplicity.
+        true_animal_effects_map = {aid: np.random.randn() * np.sqrt(sigma_a_true) for aid in animal_ids_ordered}
+
+        n_obs = n_animals # One obs per animal for simplicity
+        pheno_df = pd.DataFrame({
+            'obs_id': animal_ids_ordered,
+            'y': [intercept_true + true_animal_effects_map[aid] + np.random.randn() * np.sqrt(sigma_e_true) for aid in animal_ids_ordered]
+        })
+        pheno_df.set_index('obs_id', inplace=True)
+
+        # 3. Build Model
+        model_eq = "y = intercept + animal"
+        R_vc = VarianceCovariance(value=sigma_e_true*0.8, df=4.0, scale=sigma_e_true*0.4, estimate_variance=True)
+        mme = build_model(model_eq, R_value=R_vc.value, R_df=R_vc.df)
+        mme.R_variance = R_vc
+
+        # Add structured random effect for "animal"
+        G0_prior = VarianceCovariance(value=sigma_a_true*0.8, df=4.0, scale=sigma_a_true*0.4, estimate_variance=True)
+        mme.add_structured_random_effect(
+            base_term_name="animal",
+            V_inv_matrix=A_inv,
+            level_ids=animal_ids_ordered,
+            prior_vc_info=G0_prior,
+            random_type_code="A"
+        )
+
+        # 4. MCMC Info
+        mme.mcmc_info = MCMCInfo(chain_length=3000, burnin=500, printout_frequency=3001, seed=777)
+
+        # 5. Get MME Components
+        get_mme_components(mme, pheno_df) # df_pheno provides 'y'
+
+        # 6. Run MCMC
+        results = run_mcmc(mme, pheno_df)
+
+        # 7. Check Results
+        mean_intercept_est = results.get("mean_solutions")[mme.model_term_dict["y:intercept"].start_pos]
+        self.assertAlmostEqual(mean_intercept_est, intercept_true, delta=1.0, msg="Animal model intercept not recovered well.")
+
+        mean_res_var_est = results.get("mean_residual_variance")
+        self.assertGreater(mean_res_var_est, 0)
+        self.assertLess(abs(mean_res_var_est - sigma_e_true) / sigma_e_true, 0.8, "Animal model residual variance not recovered well.")
+
+        # Check polygenic variance (G0)
+        # This is stored in mme.pedigree_inv_covariance.value (which is G0_inv)
+        # Or in the RandomEffectTerm's Gi.value
+        animal_re_term = next(rt for rt in mme.random_effect_terms if rt.random_type=="A")
+        # The stored value is G0_inv. We need to invert it to get G0, then take mean if matrix.
+        # For ST animal model, G0 is scalar sigma_a^2. Gi.value is 1/sigma_a^2.
+        # So, 1.0 / animal_re_term.Gi.value (or mean of this if it's from MCMC) is estimate of sigma_a^2
+        # The results dict doesn't explicitly store mean G0 yet.
+        # We need to access the mean of the sampled G0_inv from the RandomEffectTerm's accumulation storage.
+        # This requires adding accumulation for rt.Gi.value / rt.Gi_new.value in engine.py
+        # For now, check if the final sampled value in animal_re_term.Gi.value is reasonable.
+        final_G0_inv_est = animal_re_term.Gi.value
+        if isinstance(final_G0_inv_est, (float, np.floating)): # Scalar for ST
+            final_G0_est = 1.0 / final_G0_inv_est if final_G0_inv_est != 0 else np.inf
+            self.assertGreater(final_G0_est, 0)
+            self.assertLess(abs(final_G0_est - sigma_a_true) / sigma_a_true, 0.9, "Animal model polygenic variance not recovered well.")
+        else: # Matrix for MT
+            self.fail("Polygenic variance G0 for ST animal model should be scalar-like.")
+
+        if os.path.exists(dummy_ped_path): os.remove(dummy_ped_path)
+
+    def test_run_mcmc_ssgblup_simple(self):
+        """Test MCMC for a simple ssGBLUP animal model."""
+        from pyjwas.pedigree import PedigreeData, read_pedigree # For test setup
+        from pyjwas.single_step import calculate_H_inverse # For direct call if needed for parts
+
+        # 1. Setup Pedigree (same as test_animal_model_simple)
+        ped_content = """A1,0,0\nA2,0,0\nA3,A1,A2\nA4,A1,A2\nA5,A3,0\nA6,A3,A4"""
+        dummy_ped_path = "test_ssgblup_ped.csv"
+        with open(dummy_ped_path, "w") as f: f.write(ped_content.strip())
+        ped_data = read_pedigree(dummy_ped_path)
+
+        # 2. Define Genotyped Animals and create a GRM for them
+        # Let's say A3, A4, A5, A6 are genotyped.
+        # Original IDs before reordering by set_genotyped_animals in calculate_H_inverse
+        # The order of IDs for GRM must match the GRM rows/cols.
+        grm_ids = ["A3", "A4", "A5", "A6"]
+        n_g = len(grm_ids)
+        # Simple GRM: scaled identity + small noise to make it PD
+        G_matrix = np.eye(n_g) * 0.9 + np.random.rand(n_g, n_g) * 0.05
+        G_matrix = (G_matrix + G_matrix.T) / 2.0 # Symmetrize
+        G_matrix += np.eye(n_g) * 0.05 # Ensure PD
+
+        geno_data_grm = GenotypesData(name="grm_main", obs_ids=grm_ids, genotypes=G_matrix, is_grm=True)
+
+        # 3. Simulate Data
+        all_animal_ids_in_ped = ped_data.get_ordered_ids_str() # IDs in initial pedigree order
+        n_total_animals = len(all_animal_ids_in_ped)
+
+        intercept_true = 20.0
+        sigma_a_true = 2.5  # Polygenic variance (relative to H)
+        sigma_e_true = 5.0  # Residual variance
+
+        # Simulate animal effects u ~ N(0, H * sigma_a_true) - this is complex as H is not easily available.
+        # For simplicity, simulate u ~ N(0, I * sigma_a_true) for all animals in pedigree for now.
+        # This is a simplification for testing the MCMC mechanics, not for validating H itself.
+        true_animal_effects_map = {aid: np.random.randn() * np.sqrt(sigma_a_true) for aid in all_animal_ids_in_ped}
+
+        pheno_df = pd.DataFrame({
+            'obs_id': all_animal_ids_in_ped,
+            'y': [intercept_true + true_animal_effects_map[aid] + np.random.randn() * np.sqrt(sigma_e_true)
+                  for aid in all_animal_ids_in_ped]
+        })
+        pheno_df.set_index('obs_id', inplace=True)
+
+        # 4. Build Model using setup_single_step_animal_model
+        model_eq = "y = intercept + animal" # 'animal' is the base name
+        R_vc = VarianceCovariance(value=sigma_e_true, df=4.0, scale=sigma_e_true/2, estimate_variance=True)
+        mme = build_model(model_eq, R_value=R_vc.value, R_df=R_vc.df)
+        mme.R_variance = R_vc
+
+        G0_prior = VarianceCovariance(value=sigma_a_true, df=4.0, scale=sigma_a_true/2, estimate_variance=True)
+
+        # This call will internally calculate H_inv and set up the "animal" RandomEffectTerm
+        mme.setup_single_step_animal_model(
+            pedigree_data=ped_data, # Will be modified (reordered)
+            geno_data_for_grm=geno_data_grm,
+            polygenic_variance_prior=G0_prior,
+            base_animal_effect_name="animal",
+            weight_G_for_Hinv=0.95
+        )
+
+        # 5. MCMC Info
+        mme.mcmc_info = MCMCInfo(chain_length=2500, burnin=500, printout_frequency=2501, seed=888)
+
+        # 6. Get MME Components
+        # Phenotype data DF must use the same IDs as used in pedigree/GRM for alignment.
+        # The `setup_single_step_animal_model` reorders pedigree_data.ordered_nodes.
+        # If pheno_df is for *all* animals in H_ids order, it's fine.
+        # The current pheno_df is based on initial ped order. This needs care.
+        # `get_mme_components` expects df.index to match `mme.obs_ids`.
+        # `mme.obs_ids` should be set to `ordered_ids_for_H` by `setup_single_step_animal_model`
+        # or by `get_mme_components` using `mme.pedigree_data.get_ordered_ids_str()`.
+        # For now, let's reindex pheno_df to match H_ids if they differ.
+        H_ids_from_setup = mme.pedigree_data.get_ordered_ids_str()
+        mme.obs_ids = H_ids_from_setup # Ensure MME knows its obs_ids order
+        pheno_df_ordered = pheno_df.reindex(H_ids_from_setup)
+
+        get_mme_components(mme, pheno_df_ordered)
+
+        # 7. Run MCMC
+        results = run_mcmc(mme, pheno_df_ordered)
+
+        # 8. Check Results
+        # Intercept is the first element in solutions if "intercept" is the first term
+        intercept_model_term = mme.model_term_dict.get("y:intercept")
+        self.assertIsNotNone(intercept_model_term, "Intercept term not found in MME.")
+        mean_intercept_est = results.get("mean_solutions")[intercept_model_term.start_pos]
+        self.assertAlmostEqual(mean_intercept_est, intercept_true, delta=1.5,
+                               msg=f"ssGBLUP Intercept not recovered well (est={mean_intercept_est:.3f}, true={intercept_true:.3f}).")
+
+        mean_res_var_est = results.get("mean_residual_variance")
+        self.assertGreater(mean_res_var_est, 0)
+        self.assertLess(abs(mean_res_var_est - sigma_e_true) / sigma_e_true, 0.9, # Wider tolerance for VCs
+                        f"ssGBLUP Residual variance not recovered well (est={mean_res_var_est:.3f}, true={sigma_e_true:.3f}).")
+
+        # Check polygenic variance (sigma_a^2)
+        animal_re_term = next((rt for rt in mme.random_effect_terms if rt.random_type=="A_Hinv"), None)
+        self.assertIsNotNone(animal_re_term, "Animal RandomEffectTerm not found after ssGBLUP setup.")
+
+        # Need to accumulate posterior mean of G0 (sigma_a^2 for ST) in MCMC engine
+        # For now, check the last sampled value if accumulation isn't in results dict yet
+        # The results dict does not yet contain mean VCs for general random effects.
+        # Accessing mme.pedigree_inv_covariance (which stores G0_inv)
+        final_G0_inv_est = mme.pedigree_inv_covariance.value
+        if isinstance(final_G0_inv_est, (float, np.floating)): # Scalar for ST
+            final_G0_est = 1.0 / final_G0_inv_est if final_G0_inv_est > 1e-9 else np.inf
+            self.assertGreater(final_G0_est, 0)
+            self.assertLess(abs(final_G0_est - sigma_a_true) / sigma_a_true, 0.95, # Very wide tolerance
+                            f"ssGBLUP Polygenic variance not recovered well (est={final_G0_est:.3f}, true={sigma_a_true:.3f}).")
+        else:
+            self.fail("Polygenic variance G0 for ST ssGBLUP model should be scalar-like.")
+
+        if os.path.exists(dummy_ped_path): os.remove(dummy_ped_path)
+
+
 if __name__ == '__main__':
     unittest.main()
 ```

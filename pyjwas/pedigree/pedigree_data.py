@@ -28,12 +28,16 @@ class PedigreeData:
 
         # For relationship calculations (A matrix elements, used for inbreeding)
         # Key: tuple (seq_id1, seq_id2) with seq_id1 <= seq_id2
-        self.relationships: Dict[Tuple[int, int], float] = {}
+        self.relationships: Dict[Tuple[int, int], float] = {} # For A_ij calculation
 
-        # For single-step GBLUP/SSBR (not implemented in this first pass)
-        self.set_NG: Set[str] = set() # Non-genotyped individuals
-        self.set_G: Set[str] = set()  # Genotyped individuals
-        # ... other sets like setG_core, setG_notcore from Julia if needed for SSBR
+        # For single-step methods
+        self.genotyped_ids: Set[str] = set()
+        self.non_genotyped_ids: Set[str] = set()
+        self.core_genotyped_ids: Set[str] = set() # For APY
+        self.non_core_genotyped_ids: Set[str] = set() # For APY
+
+        self.n_non_genotyped: int = 0
+        self.n_genotyped_core: int = 0 # For APY
 
     def get_node(self, individual_id: Optional[str]) -> Optional[PedNode]:
         return self.id_map.get(individual_id) if individual_id else None
@@ -450,23 +454,55 @@ animal7,animal5,animal6
     print(f"\nOrdered IDs: {ped_wright.get_ordered_ids_str()}")
     print(f"Inbreeding: {ped_wright.get_inbreeding_coefficients_ordered()}")
     # Expected F for P: F_P = 0.5 * A_DS
-    # A_DS = 0.5*(A_DB + A_DC) = 0.5*( (0.5*(A_DX + A_D0)=0.5*A_DX) + (0.5*(A_SX + A_S0)=0.5*A_SX) )
-    # Need to trace properly.
-    # For P (child of D and S): F_P = 0.5 * A_DS
-    # D and S are full sibs if B and C are same parents (X).
-    # A_DS (full sibs) = 0.5 * (1 + F_X) (if X is common parent of B and C and not inbred)
-    # If B and C are from X (founder, Fx=0), then B and C are half-sibs if other parents of B,C differ.
-    # If B(X,0), C(X,0), then A_BC = 0.25 (assuming X not inbred).
-    # S(B,C), D(B,C). So S and D are full sibs. F_S = F_D = 0.5 * A_BC.
-    # If A_BC = 0.25, then F_S = F_D = 0.125.
-    # A_DS (between full sibs S and D) = 0.5 * (1 + 0.5*(F_B + F_C))
-    # F_B from (X,0) is 0. F_C from (X,0) is 0. So A_DS = 0.5 * (1 + 0) = 0.5.
-    # Then F_P = 0.5 * A_DS = 0.5 * 0.5 = 0.25.
-    # Check P's inbreeding:
+    # ... (detailed F calculation as before) ...
+    # F_P = 0.5 * 0.625 = 0.3125 (Assuming A_BC from X(0,0) B(X,0) C(X,0) is 0.25)
     node_P = ped_wright.id_map.get('P')
-    if node_P: print(f"Calculated F_P: {node_P.inbreeding_coeff}") # Should be 0.25
+    if node_P:
+        print(f"Calculated F_P for Wright: {node_P.inbreeding_coeff:.4f}") # Expected 0.3125
+        # self.assertAlmostEqual(node_P.inbreeding_coeff, 0.3125) # For formal test
 
     A_inv_wright = calculate_A_inverse(ped_wright)
     print(f"\nA-Inverse for Wright's example ({A_inv_wright.shape}):")
-    print(A_inv_wright.toarray())
+    # print(A_inv_wright.toarray()) # Can be large
+
+    # Test set_genotyped_animals
+    print("\n--- Testing set_genotyped_animals ---")
+    filepath_sg = "test_ped_sg.csv"
+    content_sg = """A,0,0\nB,0,0\nC,A,B\nD,A,0\nE,C,D\nF,E,B""" # A,B,C,D,E,F
+    _ = _create_dummy_ped_file(filename=filepath_sg, content=content_sg)
+    ped_sg = read_pedigree(filepath_sg)
+
+    genotyped_list = ["C", "E", "F", "A"] # Some genotyped, some not
+
+    # Store original seq_ids for checking reordering
+    original_seq_ids = {nid: node.seq_id for nid, node in ped_sg.id_map.items()}
+
+    n_non_geno = ped_sg.set_genotyped_animals(genotyped_list)
+    print(f"  Number of non-genotyped: {n_non_geno}")
+    print(f"  Non-genotyped IDs: {ped_sg.non_genotyped_ids}")
+    print(f"  Genotyped IDs: {ped_sg.genotyped_ids}")
+
+    self.assertEqual(n_non_geno, 2) # B, D are not genotyped
+    self.assertEqual(ped_sg.non_genotyped_ids, {"B", "D"})
+    self.assertEqual(ped_sg.genotyped_ids, {"A", "C", "E", "F"})
+
+    print("  Ordered IDs after set_genotyped_animals:", ped_sg.get_ordered_ids_str())
+    # Expected order: Non-genotyped (B,D sorted by original parsing/coding order)
+    # Then Genotyped (A,C,E,F sorted by original parsing/coding order within this group)
+
+    # Check if seq_ids were updated and non-genotyped are first
+    max_seq_id_non_geno = 0
+    for ng_id in ped_sg.non_genotyped_ids:
+        self.assertLessEqual(ped_sg.id_map[ng_id].seq_id, n_non_geno)
+        max_seq_id_non_geno = max(max_seq_id_non_geno, ped_sg.id_map[ng_id].seq_id)
+
+    min_seq_id_geno = float('inf')
+    for g_id in ped_sg.genotyped_ids:
+        self.assertGreater(ped_sg.id_map[g_id].seq_id, n_non_geno) # Seq_ids are 1-based
+        min_seq_id_geno = min(min_seq_id_geno, ped_sg.id_map[g_id].seq_id)
+
+    if ped_sg.non_genotyped_ids and ped_sg.genotyped_ids: # Only if both groups exist
+        self.assertEqual(min_seq_id_geno, max_seq_id_non_geno + 1, "Seq IDs not contiguous after reordering")
+
+    if os.path.exists(filepath_sg): os.remove(filepath_sg)
 ```

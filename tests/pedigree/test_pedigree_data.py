@@ -100,12 +100,66 @@ animal7,animal5,animal6
         # [[1.5, 0.5, -1],
         #  [0.5, 1.5, -1],
         #  [-1,  -1,  2]]
+        # This is for order 1,2,3
+        # If ped.ordered_nodes gives IDs [1,2,3] in this order.
+        id_order = [node.id for node in ped.ordered_nodes]
+        s1,s2,s3 = id_order.index('1'), id_order.index('2'), id_order.index('3')
+
+        # Reconstruct expected based on actual order from ped.ordered_nodes
+        # T matrix rows correspond to ordered nodes.
+        # T_mat = np.zeros((3,3))
+        # D_inv_diag = np.zeros(3)
+        # T_mat[s1,s1]=1; D_inv_diag[s1]=1
+        # T_mat[s2,s2]=1; D_inv_diag[s2]=1
+        # T_mat[s3,s3]=1; T_mat[s3,s1]=-0.5; T_mat[s3,s2]=-0.5; D_inv_diag[s3]=2.0
+        # expected_A_inv_TDT = T_mat.T @ np.diag(D_inv_diag) @ T_mat
+        # np.testing.assert_array_almost_equal(A_inv.toarray(), expected_A_inv_TDT, decimal=5)
+
+        # Using known numerical example for 1(0,0), 2(0,0), 3(1,2)
+        # The implemented Henderson's rules sum contributions.
+        # For 1: A_inv[0,0]+=1
+        # For 2: A_inv[1,1]+=1
+        # For 3 (parents 1,2; F1=0,F2=0): d_inv_33 = 1/(0.5*(1-0)) = 2
+        #   A_inv[2,2]+=2
+        #   A_inv[0,0]+=0.25*2 = 0.5
+        #   A_inv[1,1]+=0.25*2 = 0.5
+        #   A_inv[2,0]-=0.5*2 = -1; A_inv[0,2]-= -1
+        #   A_inv[2,1]-=0.5*2 = -1; A_inv[1,2]-= -1
+        #   A_inv[0,1]+=0.25*2 = 0.5; A_inv[1,0]+=0.5
+        # Totals:
+        # A_inv[0,0]=1.5, A_inv[1,1]=1.5, A_inv[2,2]=2
+        # A_inv[0,1]=0.5, A_inv[1,0]=0.5
+        # A_inv[0,2]=-1, A_inv[2,0]=-1
+        # A_inv[1,2]=-1, A_inv[2,1]=-1
         expected_A_inv_dense = np.array([
             [1.5, 0.5, -1.0],
             [0.5, 1.5, -1.0],
             [-1.0, -1.0, 2.0]
         ])
-        np.testing.assert_array_almost_equal(A_inv.toarray(), expected_A_inv_dense, decimal=5)
+        # Need to map these to the actual seq_id order if it's not 1,2,3
+        A_inv_dense_ordered = np.zeros((3,3))
+        map_idx = {node_id: i for i, node_id in enumerate(['1','2','3'])} # expected order
+        current_to_expected_map = [map_idx[ped.ordered_nodes[i].id] for i in range(3)]
+
+        A_inv_arr = A_inv.toarray()
+        for r in range(3):
+            for c in range(3):
+                A_inv_dense_ordered[current_to_expected_map[r], current_to_expected_map[c]] = A_inv_arr[r,c]
+        # This reordering is tricky. Simpler to test known values at specific seq_id indices.
+        # For animal 3 (seq_id = ped.id_map['3'].seq_id), its diagonal should be 2.
+        # Its off-diag with animal 1 should be -1.
+        idx3 = ped.id_map['3'].seq_id - 1
+        idx1 = ped.id_map['1'].seq_id - 1
+        idx2 = ped.id_map['2'].seq_id - 1
+        self.assertAlmostEqual(A_inv[idx3, idx3], 2.0, places=5)
+        self.assertAlmostEqual(A_inv[idx1, idx1], 1.5, places=5)
+        self.assertAlmostEqual(A_inv[idx2, idx2], 1.5, places=5)
+        self.assertAlmostEqual(A_inv[idx1, idx2], 0.5, places=5)
+        self.assertAlmostEqual(A_inv[idx1, idx3], -1.0, places=5)
+        self.assertAlmostEqual(A_inv[idx2, idx3], -1.0, places=5)
+        # Check symmetry
+        np.testing.assert_array_almost_equal(A_inv.toarray(), A_inv.toarray().T, decimal=5)
+
 
     def test_wright_path_example_A_inv_and_F(self):
         # Pedigree: X(0,0), B(X,0), C(X,0), S(B,C), D(B,C), A(S,0), P(D,S)

@@ -88,8 +88,18 @@ class GenotypesData:
         self.mean_alpha_sq: List[np.ndarray] = [] # For variance calculation: E[x^2]
         self.mean_delta: List[np.ndarray] = []
 
-        self.mean_pi: Optional[Union[float, Dict[Any, float]]] = None # For ST, this is scalar. For MT, dict.
+        self.mean_pi: Optional[Union[float, Dict[Any, float]]] = None
         self.mean_pi_sq: Optional[Union[float, Dict[Any, float]]] = None
+
+        # For Bayesian Lasso specific parameters
+        self.lasso_lambda_sq_hyper: Optional[float] = None # Hyperparameter for tau_j^2 prior
+        self.gamma_array_bayesl: Optional[np.ndarray] = None # Stores tau_j^2 values for BayesL (ST for now)
+        self.mean_gamma_array_bayesl: Optional[np.ndarray] = None
+
+        # Precomputed terms for MCMC efficiency (see GibbsMats in Julia)
+        self._ZprimeWZ_diag: Optional[np.ndarray] = None # Stores diag(Z' diag(W) Z)
+        self._W_diag_Z_matrix: Optional[np.ndarray] = None # Stores diag(W) @ Z
+        self._precomputation_inv_weights_hash: Optional[int] = None # To check if inv_weights changed
 
         # For BayesA, marker_effect_variance.value is an array of sigma_g_j^2.
         # mean_marker_variance would then be an array of means for each sigma_g_j^2.
@@ -115,26 +125,33 @@ class GenotypesData:
         self.n_loci_model = n_markers_in_model
 
         self.alpha_samples = [np.zeros(n_markers_in_model, dtype=np.float64) for _ in range(n_traits)]
-        self.beta_samples = [np.zeros(n_markers_in_model, dtype=np.float64) for _ in range(n_traits)] # Used by BayesB/C logic
-        self.delta_samples = [np.ones(n_markers_in_model, dtype=np.float64) for _ in range(n_traits)] # Inclusion indicator
+        self.beta_samples = [np.zeros(n_markers_in_model, dtype=np.float64) for _ in range(n_traits)]
+        self.delta_samples = [np.ones(n_markers_in_model, dtype=np.float64) for _ in range(n_traits)]
 
         self.mean_alpha = [np.zeros(n_markers_in_model, dtype=np.float64) for _ in range(n_traits)]
         self.mean_alpha_sq = [np.zeros(n_markers_in_model, dtype=np.float64) for _ in range(n_traits)]
         self.mean_delta = [np.zeros(n_markers_in_model, dtype=np.float64) for _ in range(n_traits)]
 
-        # Pi (inclusion probability P(effect!=0))
         if n_traits == 1:
-            self.mean_pi = 0.0
+            self.mean_pi = 0.0 # For BayesC/B Pi accumulation
             self.mean_pi_sq = 0.0
-        else: # multi-trait Pi is a dict
-            if isinstance(self.pi_value, dict):
+            if self.method == "BayesL":
+                # gamma_array_bayesl stores tau_j^2 values
+                self.gamma_array_bayesl = np.ones(n_markers_in_model, dtype=np.float64) # Initialize (e.g. to 1 or from prior mean)
+                self.mean_gamma_array_bayesl = np.zeros(n_markers_in_model, dtype=np.float64)
+        else:
+            if isinstance(self.pi_value, dict): # For MT BayesC/B
                 self.mean_pi = {k: 0.0 for k in self.pi_value}
                 self.mean_pi_sq = {k: 0.0 for k in self.pi_value}
-            else: # Default for MT if pi_value was not dict (should be set up before here)
+            else:
                 self.mean_pi = {}
                 self.mean_pi_sq = {}
+            # TODO: Initialize MT BayesL gamma_array (list of arrays or 2D array)
+            if self.method == "BayesL":
+                self.gamma_array_bayesl = None # Placeholder for MT BayesL
+                self.mean_gamma_array_bayesl = None
 
-        # Marker effect variance (sigma_g^2 or array of sigma_g_j^2)
+        # Marker effect variance storage
         # Determine if it's scalar (RRBLUP, BayesC) or array (BayesA, BayesB)
         # This depends on how self.marker_effect_variance.value is initialized by the method setup.
         # For now, initialize based on n_traits for flexibility.
@@ -164,6 +181,47 @@ class GenotypesData:
         else:
             self.mean_scale_marker_variance = None
             self.mean_scale_marker_variance_sq = None
+
+    def precompute_mcmc_terms(self, inv_weights: np.ndarray):
+        """
+        Precomputes terms involving the genotype matrix (Z) and inverse weights (W)
+        to speed up MCMC iterations, if Z is available and not a GRM.
+        These terms are Z'diag(W)Z (diagonal elements) and diag(W)Z.
+
+        Args:
+            inv_weights: A 1D NumPy array of inverse observation weights (w_i).
+        """
+        if self.genotypes is None or self.is_grm:
+            # Precomputation not applicable or not needed if no Z matrix or if it's a GRM
+            self._ZprimeWZ_diag = None
+            self._W_diag_Z_matrix = None
+            self._precomputation_inv_weights_hash = None
+            return
+
+        if len(inv_weights) != self.genotypes.shape[0]:
+            raise ValueError("Length of inv_weights must match number of observations in genotypes.")
+
+        current_inv_weights_hash = hash(inv_weights.tobytes())
+
+        # Only recompute if inv_weights have changed or not computed yet
+        if self._ZprimeWZ_diag is None or \
+           self._W_diag_Z_matrix is None or \
+           self._precomputation_inv_weights_hash != current_inv_weights_hash:
+
+            # print(f"Debug: Precomputing MCMC terms for {self.name}...")
+
+            # W_diag_Z_matrix = diag(W) @ Z
+            # Each column j of W_diag_Z_matrix is Z_j .* inv_weights (element-wise)
+            self._W_diag_Z_matrix = self.genotypes * inv_weights[:, np.newaxis]
+
+            # ZprimeWZ_diag_j = Z_j' diag(W) Z_j = sum_i (Z_ij^2 * w_i)
+            # This can be calculated as sum( (Z_ij * w_i) * Z_ij , axis=0)
+            # which is sum( W_diag_Z_matrix_ij * Z_ij , axis=0)
+            self.priv_xpWz = np.sum(self._W_diag_Z_matrix * self.genotypes, axis=0) # Corrected name
+            self._ZprimeWZ_diag = self.priv_xpWz # Use the consistent internal name for now.
+                                                # TODO: Clean up self.priv_xpWz if only _ZprimeWZ_diag is used.
+
+            self._precomputation_inv_weights_hash = current_inv_weights_hash
 
 
 if __name__ == '__main__':
