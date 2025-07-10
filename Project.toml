@@ -1,0 +1,69 @@
+"""
+[Project.toml content for the package]
+
+name = "DynamicEpistasisGBLUP"
+uuid = "f8ab24b4-e998-4a37-8124-5d56a0c9d2f1" # Placeholder UUID, generate with Pkg in real environment
+authors = ["Advanced AI Implementation (via AI Agent)"]
+version = "0.1.0" # Initial version
+
+description = "A cutting-edge Julia package for genomic prediction with dynamic orthogonal epistasis, GPU acceleration, and advanced quantitative genetic models."
+license = "MIT"
+
+[deps]
+Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
+BSON = "fbb218c0-5317-5bc6-957e-2ee96dd4b1f0"
+BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
+CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
+CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+CUDAKernels = "324933f9-fec1-50c2-983e-a928b74a7708" # From GPUOptimization
+Colors = "5ae59095-9a9b-59fe-a467-6f913c188581" # From Visualization
+Combinatorics = "861a8166-3701-5b0c-9a16-15d98fcdc6aa" # From BreedingOptimization
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
+DataStructures = "864edb3b-99cc-5e75-8d2d-829cb0a9cfe8"
+Distributed = "8ba89e20-285c-5b6f-9357-94700520ee1b" # From DistributedComputing
+DistributedArrays = "aaf54ef3-cdf8-58ed-94cc-d58273fd7310" # From DistributedComputing
+Distributions = "31c24e10-a181-5473-b8eb-cc8e7c67173c"
+FFTW = "7a13425a-62d7-5413-b0d7-059618304968" # From SparseEpistasis (Wavelets might imply this)
+FLoops = "f15eda80-8122-4388-8ab6-503e458e0336" # If used
+ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210" # From AugmentedAIREML
+GLM = "38e38edf-8417-5370-95a0-bad6bb8c7f18" # If used
+GLMakie = "e9467ef8-e4e7-45ac-8adf-b124ce2f6210" # From Visualization
+Graphs = "86223c79-3886-5c65-af79-04c588f38ff7" # From Visualization
+Gurobi = "2e9cd046-0924-5485-92f1-d5272153d98b" # From BreedingOptimization
+IterativeSolvers = "42fd0dbc-a981-5370-90f2-7218b55233c5" # From SparseEpistasis
+JLD2 = "033835bb-8acc-50c5-8a28-b6c3c9596f21" # If used
+JuMP = "4076af6c-e467-56ae-b986-b466b2749572" # From BreedingOptimization
+KernelAbstractions = "63c18a36-0618-5129-96ca-de0e047804cf"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+LoopVectorization = "bdcacae8-1622-11e9-2a5c-532679323890" # If used
+MPI = "7cb0a576-0887-5943-8056-c0933802039a" # From DistributedComputing, if used
+Makie = "ee78f7c6-11fb-53f2-987a-cfe46043d316" # From Visualization
+MixedModels = "ff71e718-51f3-5ec2-a782-8ffcbfa3c77d" # If used
+NetworkLayout = "7034ab7a-7387-5638-a8e7-94c06c902928" # From Visualization
+Optim = "429524aa-4258-5aef-a3af-852621145aeb" # From AugmentedAIREML
+PlotlyJS = "f0f68f2c-4968-5e81-91da-67840de09c6c" # From Visualization
+Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80" # From Visualization
+ProgressMeter = "92933f4c-e287-5906-b727-1420c09235af"
+ProximalOperators = "b2b42b89-9351-5040-911f-1eee14f7c99c" # From SparseEpistasis
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+SharedArrays = "1a1011a3-84de-559e-8e89-a11a2f7dc383"
+SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
+StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
+StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91" # From Visualization (for hclust, quantile)
+StatsModels = "3eaba693-59b7-5ba1-8776-c36171d85361" # If used
+StructArrays = "09ab3975-f054-5d48-8da2-dfcc5423dbf5" # If used
+Wavelets = "283095a9-7654-5897-9451-06672abe0f31" # From SparseEpistasis
+
+[compat]
+julia = "1.9" # As stated in the module header
+
+# Add other compat sections as needed, e.g. for CUDA
+# [compat.CUDA]
+# version = "5.0" # Example, check actual needs
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]
+"""
