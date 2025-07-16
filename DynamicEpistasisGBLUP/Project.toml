@@ -1,0 +1,15 @@
+name = "DynamicEpistasisGBLUP"
+version = "0.1.0"
+authors = ["Jules"]
+
+[deps]
+CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
+Distributions = "31c24e10-a181-5473-b8eb-cc856c621d33"
+JWAS = "f6f06a6c-1457-4586-b499-0b15f5a6d36e"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+Plots = "91a5bc22-3851-5128-b1b0-4351a4336c64"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+StatsBase = "2913bbd2-ae8a-5f71-8c99-42f6c7934537"
+XSim = "bd43c214-8769-421a-9f5e-b2d27c6536b7"
