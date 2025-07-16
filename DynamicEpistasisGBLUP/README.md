@@ -21,20 +21,45 @@ julia --project -e 'using Pkg; Pkg.instantiate()'
 
 ## Usage
 
-The main workflow can be run from within a Julia session.
+The main workflow can be run from the Julia REPL or by running the example script.
 
+### Running from the REPL
+
+Start Julia from the project root directory:
+```bash
+julia --project
+```
+
+Then, within the Julia session:
 ```julia
 using DynamicEpistasisGBLUP
 
-# Run the full simulation and analysis
+# Run the full simulation and analysis.
+# This will use the GPU if available.
 MainWorkflow.run_full_workflow()
+
+# To force CPU usage:
+# MainWorkflow.run_full_workflow(use_gpu=false)
 ```
 
-This will:
-1.  Simulate a sheep population for 10 generations.
-2.  Run both the additive and epistasis GBLUP models for each generation.
-3.  Calculate and print the prediction accuracy for each model.
-4.  Generate a plot `prediction_accuracy.png` showing the accuracy trends over generations.
+### Running the Example Script
+
+You can also run the provided example script from your terminal:
+```bash
+julia --project examples/run_simulation.jl
+```
+
+This will execute the full workflow and save the results plot.
+
+## Workflow Overview
+
+The `run_full_workflow()` function performs the following steps:
+1.  **Simulates Data:** Creates a base population and simulates 10 generations of selection for a trait with both additive and epistatic effects.
+2.  **Runs Models:** For each generation, it runs two genomic prediction models:
+    *   A standard additive GBLUP.
+    *   An orthogonal epistasis GBLUP that models both additive and epistatic effects.
+3.  **Evaluates Accuracy:** It calculates the Pearson correlation between the true genetic values and the predicted values for both models.
+4.  **Generates Plot:** It creates a plot named `prediction_accuracy.png` that visualizes the prediction accuracy of both models over the 10 generations.
 
 ## Modules
 
