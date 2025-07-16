@@ -151,6 +151,51 @@ mutable struct VarianceComponents{T<:AbstractFloat}
 end
 
 
+# REML algorithm parameters
+"""
+    REMLParameters{T<:AbstractFloat}
+
+A struct to hold control parameters for the REML algorithm.
+
+# Fields
+- `max_iter::Int`: Maximum number of iterations.
+- `tol::T`: Convergence tolerance for log-likelihood change and parameter updates.
+- `verbose::Bool`: If `true`, print iteration details.
+- `min_variance_value::T`: A small positive value to prevent variance components from becoming zero or negative.
+- `use_gpu::Bool`: Flag to indicate whether GPU should be used for computations.
+"""
+struct REMLParameters{T<:AbstractFloat}
+    max_iter::Int
+    tol::T
+    verbose::Bool
+    min_variance_value::T
+    use_gpu::Bool
+end
+
+# REML results structure
+"""
+    REMLResults{T<:AbstractFloat}
+
+A struct to store the results from a REML analysis.
+
+# Fields
+- `var_components::Vector{T}`: Vector of estimated variance components. Order corresponds to input GRMs + residual.
+- `log_likelihood::T`: The final REML log-likelihood value.
+- `iterations::Int`: Number of iterations performed.
+- `converged::Bool`: `true` if the algorithm converged, `false` otherwise.
+- `V_inv::Union{Matrix{T}, CuMatrix{T}}`: The inverse of the final phenotypic covariance matrix V. Stored on CPU or GPU.
+- `P::Union{Matrix{T}, CuMatrix{T}}`: The final projection matrix P. Stored on CPU or GPU.
+"""
+mutable struct REMLResults{T<:AbstractFloat}
+    var_components::Vector{T}
+    log_likelihood::T
+    iterations::Int
+    converged::Bool
+    V_inv::Union{Matrix{T}, CuMatrix{T}}
+    P::Union{Matrix{T}, CuMatrix{T}}
+end
+
+
 # GBLUP model structure
 """
     OrthogonalGBLUP{T<:AbstractFloat}

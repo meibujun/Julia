@@ -1264,3 +1264,28 @@ end
         genetic_values_out[ind_idx] = current_value
     end
 end
+
+"""
+    impute_genotypes_kernel!(data, missing_mask_rows, missing_mask_cols, allele_freqs, n_missing)
+
+GPU kernel to impute missing genotypes using mean imputation (2 * p_j).
+It iterates over the list of missing entries provided by the sparse mask's components.
+"""
+@kernel function impute_genotypes_kernel!(
+    data::CuDeviceArray{T, 2},
+    missing_mask_rows::CuDeviceArray{Int32, 1}, # Row indices of missing values from CSR
+    missing_mask_cols::CuDeviceArray{Int32, 1}, # Column indices of missing values from CSR
+    allele_freqs::CuDeviceArray{T, 1},
+    n_missing::Int
+) where T
+    idx = @index(Global) # Linear index over the missing entries
+
+    if idx <= n_missing
+        row = missing_mask_rows[idx]
+        col = missing_mask_cols[idx]
+
+        # Impute with mean genotype: 2 * p_j
+        imputation_value = 2 * allele_freqs[col]
+        data[row, col] = imputation_value
+    end
+end

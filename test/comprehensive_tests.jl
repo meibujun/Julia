@@ -285,4 +285,65 @@ end
     end
 end
 
+@testset "REML Implementation Tests" begin
+    if IS_CUDA_FUNCTIONAL_TESTSUITE
+        # Use a small, controlled population for REML test
+        pop_data = generate_test_population_data(80, 150, seed_val=999)
+
+        y_train = CuArray(pop_data.phenotypes.values)
+        X_train = CUDA.ones(Float32, 80, 1)
+
+        Ga = Main.DynamicEpistasisGBLUP.GRMComputation.compute_grm!(pop_data.genotypes, use_gpu=true)
+        Gaa = Main.DynamicEpistasisGBLUP.GRMComputation.compute_epistatic_grm!(pop_data.genotypes, use_gpu=true)
+
+        # Initial variance guesses
+        total_var = var(pop_data.phenotypes.values)
+        initial_variances = Float32[0.4*total_var, 0.1*total_var, 0.5*total_var]
+
+        reml_params = Main.DynamicEpistasisGBLUP.Types.REMLParameters{Float32}(
+            max_iter=50,
+            tol=1e-5,
+            verbose=false,
+            min_variance_value=1e-9,
+            use_gpu=true
+        )
+
+        reml_results = Main.DynamicEpistasisGBLUP.REML.estimate_variance_components_reml!(
+            y_train,
+            [Ga, Gaa],
+            X_train,
+            initial_variances,
+            reml_params
+        )
+
+        @test reml_results.converged == true
+        @test all(reml_results.var_components .> 0)
+        @test isfinite(reml_results.log_likelihood)
+    else
+        @warn "Skipping REML Implementation tests as CUDA is not functional."
+    end
+end
+
+@testset "CPU GRM Optimizations Tests" begin
+    # Test if optimized CPU versions give approx the same result as GPU versions
+    if IS_CUDA_FUNCTIONAL_TESTSUITE
+        pop_data = generate_test_population_data(60, 120, seed_val=101)
+
+        # Additive GRM
+        G_gpu = Main.DynamicEpistasisGBLUP.GRMComputation.compute_grm!(deepcopy(pop_data.genotypes), use_gpu=true)
+        G_cpu = Main.DynamicEpistasisGBLUP.GRMComputation.compute_grm!(deepcopy(pop_data.genotypes), use_gpu=false)
+        @test G_cpu isa Matrix
+        @test Array(G_gpu) ≈ G_cpu atol=1e-5
+
+        # Epistatic GRM
+        Gaa_gpu = Main.DynamicEpistasisGBLUP.GRMComputation.compute_epistatic_grm!(deepcopy(pop_data.genotypes), use_gpu=true)
+        Gaa_cpu = Main.DynamicEpistasisGBLUP.GRMComputation.compute_epistatic_grm!(deepcopy(pop_data.genotypes), use_gpu=false)
+        @test Gaa_cpu isa Matrix
+        @test Array(Gaa_gpu) ≈ Gaa_cpu atol=1e-5
+    else
+        @warn "Skipping CPU vs GPU GRM comparison tests as CUDA is not functional."
+    end
+end
+
+
 end # module ComprehensiveTestSuite
