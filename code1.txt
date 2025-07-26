@@ -1,0 +1,946 @@
+# OrthogonalGenomics.jl - Generalized Dynamic Orthogonal Epistasis for Genomic Prediction
+
+module OrthogonalGenomics
+
+using LinearAlgebra
+using Statistics
+using Random
+using Distributions
+using SparseArrays
+using Optim
+using StatsBase
+using DataFrames
+using ProgressMeter
+using Distributed
+using SharedArrays
+
+export 
+    # Types
+    GenotypeData, Population, GRMSet, VarianceComponents, PredictionModel,
+    # Encoding functions
+    noia_encode, update_allele_frequencies,
+    # GRM construction
+    compute_additive_grm, compute_dominance_grm, compute_epistatic_grms,
+    # Models
+    OGBLUP, AdditiveGBLUP, ReactionNormGBLUP,
+    # Prediction
+    predict_gebv, cross_validate,
+    # Breeding
+    optimal_mating, estimate_heterosis,
+    # Utilities
+    simulate_population, compute_accuracy
+
+# ========================================
+# Type Definitions
+# ========================================
+
+"""
+    GenotypeData
+Stores genotype information with allele frequencies
+"""
+mutable struct GenotypeData
+    genotypes::Matrix{Int8}  # N × M matrix (0, 1, 2)
+    allele_freq::Vector{Float64}  # M-vector of allele frequencies
+    n_individuals::Int
+    n_markers::Int
+    marker_names::Vector{String}
+    individual_ids::Vector{String}
+end
+
+"""
+    Population
+Represents a breeding population with phenotypes and environmental data
+"""
+struct Population
+    genotype_data::GenotypeData
+    phenotypes::Vector{Float64}
+    environments::Vector{Float64}  # Environmental covariates
+    generation::Int
+    true_breeding_values::Union{Vector{Float64}, Nothing}  # For simulations
+end
+
+"""
+    GRMSet
+Collection of genomic relationship matrices
+"""
+struct GRMSet
+    G::Matrix{Float64}      # Additive GRM
+    D::Matrix{Float64}      # Dominance GRM
+    G_AA::Matrix{Float64}   # Additive × Additive epistasis
+    G_AD::Matrix{Float64}   # Additive × Dominance epistasis
+    G_DD::Matrix{Float64}   # Dominance × Dominance epistasis
+end
+
+"""
+    VarianceComponents
+Estimated variance components from REML
+"""
+struct VarianceComponents
+    σ²_a::Float64    # Additive variance
+    σ²_d::Float64    # Dominance variance
+    σ²_aa::Float64   # A×A epistatic variance
+    σ²_ad::Float64   # A×D epistatic variance
+    σ²_dd::Float64   # D×D epistatic variance
+    σ²_e::Float64    # Residual variance
+    h²::Float64      # Narrow-sense heritability
+    H²::Float64      # Broad-sense heritability
+end
+
+# ========================================
+# Module 1: Genotype Encoding
+# ========================================
+
+"""
+    noia_encode(genotypes::Matrix{Int8}, allele_freq::Vector{Float64})
+    
+Encode genotypes using NOIA (Natural and Orthogonal Interactions) parameterization
+Returns additive and dominance coded matrices
+"""
+function noia_encode(genotypes::Matrix{Int8}, allele_freq::Vector{Float64})
+    n, m = size(genotypes)
+    X = zeros(Float64, n, m)  # Additive encoding
+    Z = zeros(Float64, n, m)  # Dominance encoding
+    
+    @inbounds for j in 1:m
+        p = allele_freq[j]
+        q = 1.0 - p
+        
+        # Avoid division by zero for fixed alleles
+        if p ≈ 0.0 || p ≈ 1.0
+            continue
+        end
+        
+        scale_factor = sqrt(2 * p * q)
+        
+        for i in 1:n
+            # Additive coding: (n_ij - 2p) / sqrt(2pq)
+            X[i, j] = (genotypes[i, j] - 2p) / scale_factor
+            
+            # Dominance coding: (n_het - 2pq) / sqrt(2pq)
+            # n_het = 1 if heterozygous (genotype = 1), 0 otherwise
+            is_het = genotypes[i, j] == 1 ? 1.0 : 0.0
+            Z[i, j] = (is_het - 2p*q) / scale_factor
+        end
+    end
+    
+    return X, Z
+end
+
+"""
+    update_allele_frequencies!(geno_data::GenotypeData)
+    
+Update allele frequencies based on current genotypes
+"""
+function update_allele_frequencies!(geno_data::GenotypeData)
+    @inbounds for j in 1:geno_data.n_markers
+        geno_data.allele_freq[j] = mean(geno_data.genotypes[:, j]) / 2.0
+    end
+end
+
+# ========================================
+# Module 2: GRM Construction
+# ========================================
+
+"""
+    compute_additive_grm(X::Matrix{Float64}, allele_freq::Vector{Float64})
+    
+Compute additive genomic relationship matrix (VanRaden method)
+"""
+function compute_additive_grm(X::Matrix{Float64}, allele_freq::Vector{Float64})
+    n, m = size(X)
+    
+    # Compute normalization factor: sum(2p(1-p))
+    norm_factor = 0.0
+    @inbounds for j in 1:m
+        p = allele_freq[j]
+        if 0.0 < p < 1.0
+            norm_factor += 2 * p * (1 - p)
+        end
+    end
+    
+    # G = XX' / normalization
+    G = (X * X') / norm_factor
+    
+    # Ensure symmetry and positive definiteness
+    G = 0.5 * (G + G')
+    
+    # Add small ridge to diagonal for numerical stability
+    λ = 1e-6
+    G += λ * I
+    
+    return G
+end
+
+"""
+    compute_dominance_grm(Z::Matrix{Float64}, allele_freq::Vector{Float64})
+    
+Compute dominance genomic relationship matrix
+"""
+function compute_dominance_grm(Z::Matrix{Float64}, allele_freq::Vector{Float64})
+    n, m = size(Z)
+    
+    # Compute normalization factor
+    norm_factor = 0.0
+    @inbounds for j in 1:m
+        p = allele_freq[j]
+        if 0.0 < p < 1.0
+            norm_factor += 2 * p * (1 - p)
+        end
+    end
+    
+    # D = ZZ' / normalization
+    D = (Z * Z') / norm_factor
+    
+    # Ensure symmetry and positive definiteness
+    D = 0.5 * (D + D')
+    D += 1e-6 * I
+    
+    return D
+end
+
+"""
+    compute_epistatic_grms(G::Matrix{Float64}, D::Matrix{Float64})
+    
+Compute epistatic GRMs using Hadamard products
+Returns G_AA, G_AD, G_DD
+"""
+function compute_epistatic_grms(G::Matrix{Float64}, D::Matrix{Float64})
+    n = size(G, 1)
+    
+    # Additive × Additive epistasis
+    G_AA = G .* G
+    
+    # Additive × Dominance epistasis  
+    G_AD = G .* D
+    
+    # Dominance × Dominance epistasis
+    G_DD = D .* D
+    
+    # Normalize trace to average 1 on diagonal
+    G_AA = G_AA * (n / tr(G_AA))
+    G_AD = G_AD * (n / tr(G_AD))
+    G_DD = G_DD * (n / tr(G_DD))
+    
+    # Ensure positive definiteness
+    λ = 1e-6
+    G_AA += λ * I
+    G_AD += λ * I
+    G_DD += λ * I
+    
+    return G_AA, G_AD, G_DD
+end
+
+"""
+    build_grm_set(geno_data::GenotypeData)
+    
+Build complete set of GRMs from genotype data
+"""
+function build_grm_set(geno_data::GenotypeData)
+    # Update allele frequencies
+    update_allele_frequencies!(geno_data)
+    
+    # NOIA encoding
+    X, Z = noia_encode(geno_data.genotypes, geno_data.allele_freq)
+    
+    # Base GRMs
+    G = compute_additive_grm(X, geno_data.allele_freq)
+    D = compute_dominance_grm(Z, geno_data.allele_freq)
+    
+    # Epistatic GRMs
+    G_AA, G_AD, G_DD = compute_epistatic_grms(G, D)
+    
+    return GRMSet(G, D, G_AA, G_AD, G_DD)
+end
+
+# ========================================
+# Module 3: Variance Component Estimation
+# ========================================
+
+"""
+    reml_objective(params::Vector{Float64}, y::Vector{Float64}, grms::GRMSet)
+    
+REML objective function for variance component estimation
+"""
+function reml_objective(params::Vector{Float64}, y::Vector{Float64}, grms::GRMSet)
+    σ²_a, σ²_d, σ²_aa, σ²_ad, σ²_dd, σ²_e = params
+    
+    # Ensure positive variances
+    if any(params .< 0)
+        return Inf
+    end
+    
+    n = length(y)
+    
+    # Construct V = sum of variance component matrices
+    V = σ²_a * grms.G + 
+        σ²_d * grms.D + 
+        σ²_aa * grms.G_AA + 
+        σ²_ad * grms.G_AD + 
+        σ²_dd * grms.G_DD + 
+        σ²_e * I
+    
+    # Compute log-likelihood (simplified REML)
+    try
+        L = cholesky(V)
+        logdet_V = 2 * sum(log.(diag(L.L)))
+        
+        # Compute y'V^{-1}y
+        v_inv_y = L \ y
+        yVy = dot(y, v_inv_y)
+        
+        # REML log-likelihood (up to constant)
+        loglik = -0.5 * (logdet_V + yVy)
+        
+        return -loglik  # Minimize negative log-likelihood
+    catch
+        return Inf  # Return large value if V is not positive definite
+    end
+end
+
+"""
+    estimate_variance_components(y::Vector{Float64}, grms::GRMSet)
+    
+Estimate variance components using REML
+"""
+function estimate_variance_components(y::Vector{Float64}, grms::GRMSet)
+    # Initial values based on phenotypic variance
+    var_y = var(y)
+    init_params = [
+        0.3 * var_y,   # σ²_a
+        0.05 * var_y,  # σ²_d  
+        0.1 * var_y,   # σ²_aa
+        0.05 * var_y,  # σ²_ad
+        0.05 * var_y,  # σ²_dd
+        0.45 * var_y   # σ²_e
+    ]
+    
+    # Optimize using L-BFGS-B with bounds
+    lower = zeros(6)
+    upper = fill(2.0 * var_y, 6)
+    
+    result = optimize(
+        params -> reml_objective(params, y, grms),
+        lower, upper, init_params,
+        Fminbox(LBFGS()),
+        Optim.Options(iterations=500, g_tol=1e-6)
+    )
+    
+    # Extract estimates
+    σ²_a, σ²_d, σ²_aa, σ²_ad, σ²_dd, σ²_e = Optim.minimizer(result)
+    
+    # Calculate heritabilities
+    σ²_p = σ²_a + σ²_d + σ²_aa + σ²_ad + σ²_dd + σ²_e
+    h² = σ²_a / σ²_p
+    H² = (σ²_a + σ²_d + σ²_aa + σ²_ad + σ²_dd) / σ²_p
+    
+    return VarianceComponents(σ²_a, σ²_d, σ²_aa, σ²_ad, σ²_dd, σ²_e, h², H²)
+end
+
+# ========================================
+# Module 4: Prediction Models
+# ========================================
+
+abstract type PredictionModel end
+
+struct OGBLUP <: PredictionModel
+    grms::GRMSet
+    var_comp::VarianceComponents
+    effects::Dict{Symbol, Vector{Float64}}
+end
+
+struct AdditiveGBLUP <: PredictionModel
+    G::Matrix{Float64}
+    σ²_a::Float64
+    σ²_e::Float64
+    effects::Vector{Float64}
+end
+
+"""
+    fit_ogblup(population::Population; include_dominance=true, include_epistasis=true)
+    
+Fit Orthogonal GBLUP model with all genetic effects
+"""
+function fit_ogblup(population::Population; 
+                   include_dominance=true, 
+                   include_epistasis=true)
+    
+    # Build GRM set
+    grms = build_grm_set(population.genotype_data)
+    
+    # Estimate variance components
+    var_comp = estimate_variance_components(population.phenotypes, grms)
+    
+    # Solve mixed model equations
+    n = population.genotype_data.n_individuals
+    y = population.phenotypes
+    
+    # Build coefficient matrix C = sum(σ²_i * G_i) + σ²_e * I
+    C = var_comp.σ²_a * grms.G + var_comp.σ²_e * I
+    
+    if include_dominance
+        C += var_comp.σ²_d * grms.D
+    end
+    
+    if include_epistasis
+        C += var_comp.σ²_aa * grms.G_AA
+        C += var_comp.σ²_ad * grms.G_AD
+        C += var_comp.σ²_dd * grms.G_DD
+    end
+    
+    # Solve for all effects simultaneously
+    effects_combined = C \ y
+    
+    # Decompose effects
+    effects = Dict{Symbol, Vector{Float64}}()
+    
+    # Use proportional allocation based on variance components
+    total_genetic_var = var_comp.σ²_a
+    if include_dominance
+        total_genetic_var += var_comp.σ²_d
+    end
+    if include_epistasis
+        total_genetic_var += var_comp.σ²_aa + var_comp.σ²_ad + var_comp.σ²_dd
+    end
+    
+    # Additive effects
+    effects[:additive] = (var_comp.σ²_a / total_genetic_var) * effects_combined
+    
+    if include_dominance
+        effects[:dominance] = (var_comp.σ²_d / total_genetic_var) * effects_combined
+    end
+    
+    if include_epistasis
+        effects[:epistasis_aa] = (var_comp.σ²_aa / total_genetic_var) * effects_combined
+        effects[:epistasis_ad] = (var_comp.σ²_ad / total_genetic_var) * effects_combined
+        effects[:epistasis_dd] = (var_comp.σ²_dd / total_genetic_var) * effects_combined
+    end
+    
+    return OGBLUP(grms, var_comp, effects)
+end
+
+"""
+    predict_gebv(model::OGBLUP, population::Population; components=:all)
+    
+Predict genomic estimated breeding values
+"""
+function predict_gebv(model::OGBLUP, population::Population; components=:all)
+    n = population.genotype_data.n_individuals
+    
+    if components == :all
+        # Total genetic value (broad-sense)
+        gebv = model.effects[:additive]
+        if haskey(model.effects, :dominance)
+            gebv += model.effects[:dominance]
+        end
+        if haskey(model.effects, :epistasis_aa)
+            gebv += model.effects[:epistasis_aa]
+            gebv += model.effects[:epistasis_ad]
+            gebv += model.effects[:epistasis_dd]
+        end
+    elseif components == :additive
+        # Narrow-sense breeding value only
+        gebv = model.effects[:additive]
+    else
+        error("Unknown component specification: $components")
+    end
+    
+    return gebv
+end
+
+# ========================================
+# Module 5: Reaction Norm Models
+# ========================================
+
+struct ReactionNormGBLUP <: PredictionModel
+    G::Matrix{Float64}
+    σ²_g0::Float64    # Variance of genetic intercept
+    σ²_gE::Float64    # Variance of genetic slope
+    σ²_e::Float64     # Residual variance
+    ρ::Float64        # Genetic correlation between intercept and slope
+    intercepts::Vector{Float64}
+    slopes::Vector{Float64}
+end
+
+"""
+    fit_reaction_norm(population::Population)
+    
+Fit reaction norm model for G×E interactions
+"""
+function fit_reaction_norm(population::Population)
+    n = population.genotype_data.n_individuals
+    y = population.phenotypes
+    E = population.environments
+    
+    # Build additive GRM
+    geno_data = population.genotype_data
+    update_allele_frequencies!(geno_data)
+    X, _ = noia_encode(geno_data.genotypes, geno_data.allele_freq)
+    G = compute_additive_grm(X, geno_data.allele_freq)
+    
+    # Design matrices for random regression
+    Z1 = Matrix(1.0I, n, n)  # Identity for intercepts
+    Z2 = diagm(E)            # Diagonal matrix of environments for slopes
+    
+    # Initial variance estimates
+    var_y = var(y)
+    σ²_g0 = 0.3 * var_y
+    σ²_gE = 0.1 * var_y
+    σ²_e = 0.6 * var_y
+    ρ = 0.0
+    
+    # Simplified two-trait model solution
+    # Stack the covariance matrices
+    Σ = [σ²_g0 * G  ρ * sqrt(σ²_g0 * σ²_gE) * G;
+         ρ * sqrt(σ²_g0 * σ²_gE) * G  σ²_gE * G]
+    
+    # Build full system
+    X_full = [ones(n) E]
+    Z_full = [Z1 Z2]
+    
+    # Mixed model equations (simplified)
+    # This is a placeholder - full implementation would use iterative REML
+    C = Z_full * Σ * Z_full' + σ²_e * I
+    
+    # Solve for fixed and random effects
+    β = (X_full' * (C \ X_full)) \ (X_full' * (C \ y))
+    u = Σ * Z_full' * (C \ (y - X_full * β))
+    
+    # Extract intercepts and slopes
+    intercepts = u[1:n]
+    slopes = u[(n+1):(2n)]
+    
+    return ReactionNormGBLUP(G, σ²_g0, σ²_gE, σ²_e, ρ, intercepts, slopes)
+end
+
+"""
+    predict_gebv(model::ReactionNormGBLUP, environment::Float64)
+    
+Predict GEBVs for a specific environment
+"""
+function predict_gebv(model::ReactionNormGBLUP, environment::Float64)
+    return model.intercepts .+ model.slopes .* environment
+end
+
+# ========================================
+# Module 6: Breeding Applications
+# ========================================
+
+"""
+    optimal_mating(model::OGBLUP, population::Population; 
+                  n_matings=100, avoid_inbreeding=true)
+    
+Design optimal matings considering dominance and epistasis
+"""
+function optimal_mating(model::OGBLUP, population::Population; 
+                       n_matings=100, avoid_inbreeding=true)
+    n = population.genotype_data.n_individuals
+    
+    # Get breeding values
+    gebv_additive = model.effects[:additive]
+    gebv_dominance = get(model.effects, :dominance, zeros(n))
+    
+    # Rank individuals by additive GEBV
+    top_males = sortperm(gebv_additive, rev=true)[1:div(n, 4)]
+    top_females = sortperm(gebv_additive, rev=true)[div(n, 4)+1:div(n, 2)]
+    
+    matings = []
+    
+    for _ in 1:n_matings
+        # Select male
+        male = rand(top_males)
+        
+        # Select female to maximize expected progeny performance
+        # considering dominance complementation
+        best_female = 0
+        best_score = -Inf
+        
+        for female in top_females
+            # Expected additive value of progeny
+            exp_additive = 0.5 * (gebv_additive[male] + gebv_additive[female])
+            
+            # Expected dominance (simplified - would use marker-level in practice)
+            # Favor matings between individuals with different dominance profiles
+            dominance_complement = -abs(gebv_dominance[male] - gebv_dominance[female])
+            
+            # Inbreeding penalty
+            inbreeding_penalty = 0.0
+            if avoid_inbreeding
+                # Use genomic relationship as proxy for expected inbreeding
+                inbreeding_penalty = -model.grms.G[male, female]
+            end
+            
+            score = exp_additive + 0.1 * dominance_complement + 0.2 * inbreeding_penalty
+            
+            if score > best_score
+                best_score = score
+                best_female = female
+            end
+        end
+        
+        push!(matings, (male, best_female, best_score))
+    end
+    
+    return matings
+end
+
+"""
+    estimate_heterosis(model::OGBLUP, pop1::Population, pop2::Population)
+    
+Estimate expected heterosis from crossing two populations
+"""
+function estimate_heterosis(model::OGBLUP, pop1::Population, pop2::Population)
+    # Get allele frequencies for each population
+    update_allele_frequencies!(pop1.genotype_data)
+    update_allele_frequencies!(pop2.genotype_data)
+    
+    p1 = pop1.genotype_data.allele_freq
+    p2 = pop2.genotype_data.allele_freq
+    
+    # Expected heterozygosity in F1
+    expected_het = 2 .* p1 .* (1 .- p2) .+ 2 .* p2 .* (1 .- p1)
+    
+    # Simplified heterosis estimate based on dominance variance
+    # In practice, would use marker-specific dominance effects
+    avg_het_increase = mean(expected_het) - mean(2 .* p1 .* (1 .- p1))
+    
+    heterosis_estimate = model.var_comp.σ²_d * avg_het_increase
+    
+    # Add epistatic contribution (simplified)
+    allele_freq_diff = mean(abs.(p1 .- p2))
+    epistatic_heterosis = (model.var_comp.σ²_aa + model.var_comp.σ²_ad) * allele_freq_diff
+    
+    total_heterosis = heterosis_estimate + epistatic_heterosis
+    
+    return Dict(
+        :dominance_heterosis => heterosis_estimate,
+        :epistatic_heterosis => epistatic_heterosis,
+        :total_heterosis => total_heterosis,
+        :percent_heterosis => 100 * total_heterosis / mean(pop1.phenotypes)
+    )
+end
+
+# ========================================
+# Module 7: Utilities and Validation
+# ========================================
+
+"""
+    simulate_population(n_individuals::Int, n_markers::Int, n_qtl::Int;
+                       h2_add=0.3, h2_dom=0.05, h2_epi=0.1)
+    
+Simulate a population with specified genetic architecture
+"""
+function simulate_population(n_individuals::Int, n_markers::Int, n_qtl::Int;
+                           h2_add=0.3, h2_dom=0.05, h2_epi=0.1,
+                           n_generations=0)
+    # Initialize genotypes
+    genotypes = zeros(Int8, n_individuals, n_markers)
+    
+    # Sample initial allele frequencies from Beta(0.4, 0.4)
+    initial_freq = rand(Beta(0.4, 0.4), n_markers)
+    
+    # Generate genotypes based on HWE
+    for j in 1:n_markers
+        p = initial_freq[j]
+        for i in 1:n_individuals
+            genotypes[i, j] = Int8(sum(rand(2) .< p))
+        end
+    end
+    
+    # Select QTL positions
+    qtl_positions = sample(1:n_markers, n_qtl, replace=false)
+    
+    # Generate QTL effects
+    qtl_add_effects = randn(n_qtl) .* sqrt(h2_add / n_qtl)
+    qtl_dom_effects = randn(n_qtl) .* sqrt(h2_dom / n_qtl)
+    
+    # Select epistatic pairs
+    n_epi_pairs = div(n_qtl, 2)
+    epi_pairs = [(qtl_positions[2i-1], qtl_positions[2i]) for i in 1:n_epi_pairs]
+    epi_effects = randn(n_epi_pairs) .* sqrt(h2_epi / n_epi_pairs)
+    
+    # Calculate phenotypes
+    phenotypes = zeros(n_individuals)
+    true_breeding_values = zeros(n_individuals)
+    
+    for i in 1:n_individuals
+        # Additive effects
+        for (k, qtl) in enumerate(qtl_positions)
+            effect = qtl_add_effects[k] * (genotypes[i, qtl] - 2 * initial_freq[qtl])
+            phenotypes[i] += effect
+            true_breeding_values[i] += effect
+        end
+        
+        # Dominance effects
+        for (k, qtl) in enumerate(qtl_positions)
+            if genotypes[i, qtl] == 1  # Heterozygous
+                phenotypes[i] += qtl_dom_effects[k]
+            end
+        end
+        
+        # Epistatic effects
+        for (k, (qtl1, qtl2)) in enumerate(epi_pairs)
+            interaction = (genotypes[i, qtl1] - 1) * (genotypes[i, qtl2] - 1)
+            phenotypes[i] += epi_effects[k] * interaction
+        end
+    end
+    
+    # Add environmental noise
+    σ²_e = var(phenotypes) * (1 - h2_add - h2_dom - h2_epi) / (h2_add + h2_dom + h2_epi)
+    phenotypes .+= randn(n_individuals) .* sqrt(σ²_e)
+    
+    # Create GenotypeData
+    geno_data = GenotypeData(
+        genotypes,
+        initial_freq,
+        n_individuals,
+        n_markers,
+        ["M$i" for i in 1:n_markers],
+        ["ID$i" for i in 1:n_individuals]
+    )
+    
+    # Create Population
+    population = Population(
+        geno_data,
+        phenotypes,
+        zeros(n_individuals),  # No environmental variation initially
+        0,  # Generation 0
+        true_breeding_values
+    )
+    
+    # Simulate selection over generations if requested
+    if n_generations > 0
+        population = simulate_selection(population, n_generations)
+    end
+    
+    return population
+end
+
+"""
+    simulate_selection(population::Population, n_generations::Int)
+    
+Simulate selection over multiple generations
+"""
+function simulate_selection(population::Population, n_generations::Int)
+    current_pop = population
+    
+    for gen in 1:n_generations
+        # Fit model to predict breeding values
+        model = fit_ogblup(current_pop, include_dominance=false, include_epistasis=false)
+        gebv = predict_gebv(model, current_pop, components=:additive)
+        
+        # Select top 20% as parents
+        n = current_pop.genotype_data.n_individuals
+        n_parents = div(n, 5)
+        selected = sortperm(gebv, rev=true)[1:n_parents]
+        
+        # Generate next generation through random mating
+        next_genotypes = zeros(Int8, n, current_pop.genotype_data.n_markers)
+        
+        for i in 1:n
+            # Select parents
+            parent1 = rand(selected)
+            parent2 = rand(selected)
+            
+            # Generate offspring genotype
+            for j in 1:current_pop.genotype_data.n_markers
+                # Inherit one allele from each parent
+                allele1 = rand() < 0.5 ? 
+                    (current_pop.genotype_data.genotypes[parent1, j] > 0 ? 1 : 0) :
+                    (current_pop.genotype_data.genotypes[parent1, j] == 2 ? 1 : 0)
+                    
+                allele2 = rand() < 0.5 ?
+                    (current_pop.genotype_data.genotypes[parent2, j] > 0 ? 1 : 0) :
+                    (current_pop.genotype_data.genotypes[parent2, j] == 2 ? 1 : 0)
+                    
+                next_genotypes[i, j] = allele1 + allele2
+            end
+        end
+        
+        # Create new population
+        new_geno_data = GenotypeData(
+            next_genotypes,
+            copy(current_pop.genotype_data.allele_freq),  # Will be updated
+            n,
+            current_pop.genotype_data.n_markers,
+            current_pop.genotype_data.marker_names,
+            ["ID$(gen)_$i" for i in 1:n]
+        )
+        
+        # Update allele frequencies
+        update_allele_frequencies!(new_geno_data)
+        
+        # Generate new phenotypes (simplified - would recalculate from QTL)
+        new_phenotypes = randn(n) .* std(current_pop.phenotypes) .+ mean(current_pop.phenotypes) * 1.05
+        
+        current_pop = Population(
+            new_geno_data,
+            new_phenotypes,
+            zeros(n),
+            gen,
+            nothing
+        )
+    end
+    
+    return current_pop
+end
+
+"""
+    cross_validate(population::Population, model_type::Type{<:PredictionModel}; 
+                  k_folds=5, seed=123)
+    
+Perform k-fold cross-validation
+"""
+function cross_validate(population::Population, model_type::Type{<:PredictionModel}; 
+                       k_folds=5, seed=123)
+    Random.seed!(seed)
+    n = population.genotype_data.n_individuals
+    
+    # Create folds
+    fold_size = div(n, k_folds)
+    indices = shuffle(1:n)
+    
+    accuracies = Float64[]
+    mse_values = Float64[]
+    
+    for fold in 1:k_folds
+        # Define test set
+        test_start = (fold - 1) * fold_size + 1
+        test_end = fold == k_folds ? n : fold * fold_size
+        test_indices = indices[test_start:test_end]
+        train_indices = setdiff(1:n, test_indices)
+        
+        # Create training population
+        train_geno = GenotypeData(
+            population.genotype_data.genotypes[train_indices, :],
+            copy(population.genotype_data.allele_freq),
+            length(train_indices),
+            population.genotype_data.n_markers,
+            population.genotype_data.marker_names,
+            population.genotype_data.individual_ids[train_indices]
+        )
+        
+        train_pop = Population(
+            train_geno,
+            population.phenotypes[train_indices],
+            population.environments[train_indices],
+            population.generation,
+            nothing
+        )
+        
+        # Fit model
+        if model_type == OGBLUP
+            model = fit_ogblup(train_pop)
+        elseif model_type == AdditiveGBLUP
+            # Simplified additive-only model
+            grms = build_grm_set(train_geno)
+            σ²_a = 0.3 * var(train_pop.phenotypes)
+            σ²_e = 0.7 * var(train_pop.phenotypes)
+            effects = (grms.G + (σ²_e/σ²_a) * I) \ train_pop.phenotypes
+            model = AdditiveGBLUP(grms.G, σ²_a, σ²_e, effects)
+        else
+            error("Unknown model type: $model_type")
+        end
+        
+        # Predict on test set
+        # This is simplified - would need proper projection for new individuals
+        test_pred = zeros(length(test_indices))
+        
+        # Calculate accuracy
+        if !isnothing(population.true_breeding_values)
+            accuracy = cor(test_pred, population.true_breeding_values[test_indices])
+        else
+            # Use adjusted phenotypes as proxy
+            accuracy = cor(test_pred, population.phenotypes[test_indices])
+        end
+        
+        mse = mean((test_pred .- population.phenotypes[test_indices]).^2)
+        
+        push!(accuracies, accuracy)
+        push!(mse_values, mse)
+    end
+    
+    return Dict(
+        :mean_accuracy => mean(accuracies),
+        :std_accuracy => std(accuracies),
+        :mean_mse => mean(mse_values),
+        :std_mse => std(mse_values)
+    )
+end
+
+"""
+    compute_accuracy(predicted::Vector{Float64}, true_values::Vector{Float64})
+    
+Compute prediction accuracy metrics
+"""
+function compute_accuracy(predicted::Vector{Float64}, true_values::Vector{Float64})
+    correlation = cor(predicted, true_values)
+    mse = mean((predicted .- true_values).^2)
+    
+    # Regression of true on predicted (for bias assessment)
+    X = [ones(length(predicted)) predicted]
+    β = X \ true_values
+    bias = β[2] - 1.0  # Deviation from slope of 1
+    
+    return Dict(
+        :correlation => correlation,
+        :mse => mse,
+        :bias => bias,
+        :r_squared => correlation^2
+    )
+end
+
+# ========================================
+# Parallel Computing Support
+# ========================================
+
+"""
+    parallel_grm_construction(geno_data::GenotypeData, n_workers::Int=Threads.nthreads())
+    
+Construct GRMs using parallel computation
+"""
+function parallel_grm_construction(geno_data::GenotypeData, n_workers::Int=Threads.nthreads())
+    # Update allele frequencies
+    update_allele_frequencies!(geno_data)
+    
+    # NOIA encoding
+    X, Z = noia_encode(geno_data.genotypes, geno_data.allele_freq)
+    
+    n = geno_data.n_individuals
+    
+    # Parallel computation of GRM blocks
+    G = SharedArray{Float64}(n, n)
+    D = SharedArray{Float64}(n, n)
+    
+    # Compute normalization factor
+    norm_factor = sum(2 .* geno_data.allele_freq .* (1 .- geno_data.allele_freq))
+    
+    # Parallel computation of G and D
+    @sync begin
+        @distributed for i in 1:n
+            for j in i:n
+                G[i,j] = dot(X[i,:], X[j,:]) / norm_factor
+                G[j,i] = G[i,j]
+                
+                D[i,j] = dot(Z[i,:], Z[j,:]) / norm_factor
+                D[j,i] = D[i,j]
+            end
+        end
+    end
+    
+    # Convert back to regular arrays and ensure positive definiteness
+    G = Matrix(G) + 1e-6 * I
+    D = Matrix(D) + 1e-6 * I
+    
+    # Compute epistatic GRMs
+    G_AA, G_AD, G_DD = compute_epistatic_grms(G, D)
+    
+    return GRMSet(G, D, G_AA, G_AD, G_DD)
+end
+
+# ========================================
+# Export Additional Functions
+# ========================================
+
+export simulate_selection, parallel_grm_construction
+
+end # module OrthogonalGenomics

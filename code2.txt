@@ -1,0 +1,268 @@
+# OrthogonalGenomics.jl - Core Type Definitions
+# International-standard type system for genomic prediction
+
+"""
+    GenotypeData
+
+Immutable structure storing genotype information with comprehensive metadata.
+Supports both dense and sparse representations for scalability.
+"""
+struct GenotypeData{T<:Real, M<:AbstractMatrix{T}}
+    genotypes::M                          # N × M genotype matrix
+    allele_freq::Vector{Float64}          # Current allele frequencies
+    maf_filter::Float64                   # Minor allele frequency threshold
+    call_rate::Vector{Float64}            # Per-marker call rates
+    n_individuals::Int
+    n_markers::Int
+    marker_info::DataFrame                # CHR, POS, ID, REF, ALT
+    sample_info::DataFrame                # ID, SEX, PHENOTYPE, etc.
+    ploidy::Int                          # Support for polyploid species
+    
+    # Inner constructor with validation
+    function GenotypeData{T,M}(genotypes::M, allele_freq::Vector{Float64}, 
+                               maf_filter::Float64, call_rate::Vector{Float64},
+                               n_individuals::Int, n_markers::Int,
+                               marker_info::DataFrame, sample_info::DataFrame,
+                               ploidy::Int) where {T,M}
+        # Validate dimensions
+        @assert size(genotypes) == (n_individuals, n_markers) "Dimension mismatch"
+        @assert length(allele_freq) == n_markers "Allele frequency vector size mismatch"
+        @assert length(call_rate) == n_markers "Call rate vector size mismatch"
+        @assert nrow(marker_info) == n_markers "Marker info size mismatch"
+        @assert nrow(sample_info) == n_individuals "Sample info size mismatch"
+        @assert ploidy > 0 "Ploidy must be positive"
+        
+        new(genotypes, allele_freq, maf_filter, call_rate, 
+            n_individuals, n_markers, marker_info, sample_info, ploidy)
+    end
+end
+
+# Convenience constructor
+GenotypeData(genotypes::M, allele_freq::Vector{Float64}, args...) where M = 
+    GenotypeData{eltype(genotypes), M}(genotypes, allele_freq, args...)
+
+"""
+    Population
+
+Comprehensive population structure supporting complex breeding scenarios.
+"""
+struct Population{G<:GenotypeData}
+    genotype_data::G
+    phenotypes::Matrix{Float64}           # N × P for multiple traits
+    environments::Matrix{Float64}         # N × E environmental covariates
+    generation::Int
+    pedigree::Union{Pedigree, Nothing}    # Optional pedigree information
+    true_genetic_values::Union{GeneticValues, Nothing}  # For simulations
+    metadata::Dict{Symbol, Any}           # Flexible metadata storage
+end
+
+"""
+    GeneticValues
+
+Stores true genetic values decomposed by effect type (for simulations).
+"""
+struct GeneticValues
+    additive::Matrix{Float64}             # N × P traits
+    dominance::Matrix{Float64}            
+    epistasis_aa::Matrix{Float64}
+    epistasis_ad::Matrix{Float64}
+    epistasis_dd::Matrix{Float64}
+    gxe_slopes::Matrix{Float64}           # Environmental sensitivities
+    total::Matrix{Float64}                # Sum of all effects
+end
+
+"""
+    Pedigree
+
+Pedigree information for combined pedigree-genomic analyses.
+"""
+struct Pedigree
+    ids::Vector{String}
+    sires::Vector{Union{String, Missing}}
+    dams::Vector{Union{String, Missing}}
+    A_matrix::Union{SparseMatrixCSC{Float64}, Nothing}  # Numerator relationship matrix
+    inbreeding::Vector{Float64}
+end
+
+"""
+    GRMSet
+
+Complete set of genomic relationship matrices with metadata.
+"""
+struct GRMSet{T<:AbstractMatrix{Float64}}
+    G::T                                  # Additive GRM
+    D::T                                  # Dominance GRM
+    G_AA::T                              # A×A epistasis
+    G_AD::T                              # A×D epistasis  
+    G_DD::T                              # D×D epistasis
+    eigendecomp::Union{EigenDecomposition, Nothing}  # For efficient computation
+    trace_ratios::NamedTuple             # Trace ratios for scaling
+    generation::Int                      # Generation when computed
+    allele_freq_used::Vector{Float64}   # Allele frequencies used
+end
+
+"""
+    EigenDecomposition
+
+Stores eigendecomposition of GRMs for efficient repeated calculations.
+"""
+struct EigenDecomposition
+    U::Dict{Symbol, Matrix{Float64}}     # Eigenvectors for each GRM
+    λ::Dict{Symbol, Vector{Float64}}     # Eigenvalues for each GRM
+end
+
+"""
+    VarianceComponents
+
+Comprehensive variance component estimates with standard errors.
+"""
+struct VarianceComponents
+    estimates::NamedTuple{(:σ²_a, :σ²_d, :σ²_aa, :σ²_ad, :σ²_dd, :σ²_gxe, :σ²_e), 
+                         NTuple{7, Float64}}
+    standard_errors::NamedTuple{(:se_a, :se_d, :se_aa, :se_ad, :se_dd, :se_gxe, :se_e), 
+                               NTuple{7, Float64}}
+    h²::Float64                          # Narrow-sense heritability
+    H²::Float64                          # Broad-sense heritability
+    h²_se::Float64                       # Standard error of h²
+    H²_se::Float64                       # Standard error of H²
+    log_likelihood::Float64
+    convergence::ConvergenceInfo
+    proportion_variance::NamedTuple      # Proportion of total variance
+end
+
+"""
+    ConvergenceInfo
+
+Detailed convergence information for iterative algorithms.
+"""
+struct ConvergenceInfo
+    converged::Bool
+    iterations::Int
+    tolerance_achieved::Float64
+    gradient_norm::Float64
+    parameter_change::Float64
+    message::String
+end
+
+"""
+    PredictionModel
+
+Abstract type for all prediction models.
+"""
+abstract type PredictionModel end
+abstract type LinearModel <: PredictionModel end
+abstract type NonLinearModel <: PredictionModel end
+
+"""
+    OGBLUP
+
+Orthogonal GBLUP model with all genetic effects.
+"""
+struct OGBLUP{G<:GRMSet, V<:VarianceComponents} <: LinearModel
+    grms::G
+    var_comp::V
+    fixed_effects::Matrix{Float64}       # X matrix
+    fixed_coef::Vector{Float64}          # β estimates
+    random_effects::Dict{Symbol, Matrix{Float64}}  # BLUPs for each component
+    fitted_values::Matrix{Float64}
+    residuals::Matrix{Float64}
+    model_info::ModelInfo
+end
+
+"""
+    ModelInfo
+
+Metadata about fitted models.
+"""
+struct ModelInfo
+    traits::Vector{String}
+    n_observations::Int
+    n_fixed_effects::Int
+    n_random_effects::Dict{Symbol, Int}
+    fit_date::DateTime
+    julia_version::VersionNumber
+    package_version::VersionNumber
+    computation_time::Float64
+    options::Dict{Symbol, Any}
+end
+
+"""
+    ReactionNormGBLUP
+
+Reaction norm model for G×E interactions.
+"""
+struct ReactionNormGBLUP{T<:AbstractMatrix{Float64}} <: LinearModel
+    G::T                                 # Base additive GRM
+    fixed_effects::Matrix{Float64}
+    fixed_coef::Vector{Float64}
+    intercepts::Matrix{Float64}          # N × P genetic intercepts
+    slopes::Matrix{Float64}              # N × P genetic slopes
+    var_intercept::Vector{Float64}       # Per-trait intercept variances
+    var_slope::Vector{Float64}           # Per-trait slope variances
+    cov_int_slope::Vector{Float64}       # Genetic correlations
+    residual_var::Vector{Float64}
+    environments_range::Tuple{Float64, Float64}
+    model_info::ModelInfo
+end
+
+"""
+    CrossValidationResult
+
+Comprehensive cross-validation results.
+"""
+struct CrossValidationResult
+    accuracies::Matrix{Float64}          # Folds × Traits
+    mse::Matrix{Float64}
+    bias::Matrix{Float64}
+    predictions::Vector{Matrix{Float64}} # Per-fold predictions
+    true_values::Vector{Matrix{Float64}}
+    fold_assignments::Vector{Int}
+    model_type::Type{<:PredictionModel}
+    summary_stats::NamedTuple
+end
+
+"""
+    MatingPlan
+
+Optimized mating plan with expected outcomes.
+"""
+struct MatingPlan
+    matings::Vector{Tuple{Int, Int}}     # Male, Female indices
+    expected_merit::Vector{Float64}       # Expected progeny merit
+    expected_inbreeding::Vector{Float64}
+    diversity_score::Float64              # Population-level diversity metric
+    constraints_satisfied::Bool
+    optimization_info::Dict{Symbol, Any}
+end
+
+"""
+    SimulationParameters
+
+Parameters for population simulation.
+"""
+@kwdef struct SimulationParameters
+    n_individuals::Int = 1000
+    n_markers::Int = 50000
+    n_chromosomes::Int = 30
+    n_qtl::Int = 100
+    genetic_architecture::GeneticArchitecture = AdditiveArchitecture()
+    mating_system::MatingSystem = RandomMating()
+    selection_scheme::SelectionScheme = TruncationSelection(0.2)
+    n_generations::Int = 10
+    environmental_model::EnvironmentalModel = NoEnvironment()
+end
+
+# Genetic architecture types
+abstract type GeneticArchitecture end
+struct AdditiveArchitecture <: GeneticArchitecture end
+struct EpistaticArchitecture <: GeneticArchitecture
+    n_epistatic_pairs::Int
+    interaction_types::Vector{Symbol}
+end
+
+# Export all types
+export GenotypeData, Population, GeneticValues, Pedigree, GRMSet, 
+       EigenDecomposition, VarianceComponents, ConvergenceInfo,
+       PredictionModel, LinearModel, NonLinearModel, OGBLUP, 
+       ReactionNormGBLUP, CrossValidationResult, MatingPlan,
+       SimulationParameters, GeneticArchitecture

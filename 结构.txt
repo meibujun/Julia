@@ -1,0 +1,71 @@
+OrthogonalGenomics.jl/
+├── Project.toml
+├── README.md
+├── LICENSE
+├── docs/
+│   ├── make.jl
+│   ├── src/
+│   │   ├── index.md
+│   │   ├── manual/
+│   │   ├── api/
+│   │   └── examples/
+├── src/
+│   ├── OrthogonalGenomics.jl
+│   ├── core/
+│   │   ├── types.jl
+│   │   ├── encoding.jl
+│   │   ├── validation.jl
+│   │   └── constants.jl
+│   ├── genomics/
+│   │   ├── grm_construction.jl
+│   │   ├── variance_components.jl
+│   │   ├── qc.jl
+│   │   └── imputation.jl
+│   ├── models/
+│   │   ├── ogblup.jl
+│   │   ├── reaction_norm.jl
+│   │   ├── bayesian.jl
+│   │   ├── machine_learning.jl
+│   │   └── model_selection.jl
+│   ├── optimization/
+│   │   ├── reml.jl
+│   │   ├── aireml.jl
+│   │   ├── parallel.jl
+│   │   └── gpu.jl
+│   ├── breeding/
+│   │   ├── selection.jl
+│   │   ├── mating.jl
+│   │   ├── heterosis.jl
+│   │   └── diversity.jl
+│   ├── simulation/
+│   │   ├── population.jl
+│   │   ├── qtl.jl
+│   │   ├── evolution.jl
+│   │   └── scenarios.jl
+│   ├── io/
+│   │   ├── plink.jl
+│   │   ├── vcf.jl
+│   │   ├── export.jl
+│   │   └── import.jl
+│   ├── visualization/
+│   │   ├── plots.jl
+│   │   ├── reports.jl
+│   │   └── dashboard.jl
+│   └── utils/
+│       ├── statistics.jl
+│       ├── matrix_ops.jl
+│       └── helpers.jl
+├── test/
+│   ├── runtests.jl
+│   ├── core/
+│   ├── genomics/
+│   ├── models/
+│   └── integration/
+├── examples/
+│   ├── basic_usage.jl
+│   ├── dairy_cattle_analysis.jl
+│   ├── crossbreeding_optimization.jl
+│   └── multi_environment_prediction.jl
+└── benchmarks/
+    ├── performance.jl
+    └── accuracy_comparison.jl

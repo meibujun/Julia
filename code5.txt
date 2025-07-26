@@ -1,0 +1,3115 @@
+I'll analyze the uploaded documents and design a comprehensive Julia package implementing the Generalized Dynamic Orthogonal Epistasis for Genomic Prediction in Livestock. 
+
+Based on my review of the research paper and the existing code files, I need to design a complete, international-standard Julia package that implements all the methods described in the paper.
+
+I'll design and implement a comprehensive Julia package for the Generalized Dynamic Orthogonal Epistasis genomic prediction framework described in the paper. Let me start by outlining the complete package architecture and then implement each module systematically.
+
+## Package Architecture Design
+
+### OrthogonalGenomics.jl - Complete Package Structure
+
+```
+OrthogonalGenomics.jl/
+├── Project.toml
+├── README.md
+├── LICENSE
+├── docs/
+│   ├── make.jl
+│   ├── src/
+│   │   ├── index.md
+│   │   ├── manual/
+│   │   ├── api/
+│   │   └── examples/
+├── src/
+│   ├── OrthogonalGenomics.jl
+│   ├── core/
+│   │   ├── types.jl
+│   │   ├── encoding.jl
+│   │   ├── validation.jl
+│   │   └── constants.jl
+│   ├── genomics/
+│   │   ├── grm_construction.jl
+│   │   ├── variance_components.jl
+│   │   ├── qc.jl
+│   │   └── imputation.jl
+│   ├── models/
+│   │   ├── ogblup.jl
+│   │   ├── reaction_norm.jl
+│   │   ├── bayesian.jl
+│   │   ├── machine_learning.jl
+│   │   └── model_selection.jl
+│   ├── optimization/
+│   │   ├── reml.jl
+│   │   ├── aireml.jl
+│   │   ├── parallel.jl
+│   │   └── gpu.jl
+│   ├── breeding/
+│   │   ├── selection.jl
+│   │   ├── mating.jl
+│   │   ├── heterosis.jl
+│   │   └── diversity.jl
+│   ├── simulation/
+│   │   ├── population.jl
+│   │   ├── qtl.jl
+│   │   ├── evolution.jl
+│   │   └── scenarios.jl
+│   ├── io/
+│   │   ├── plink.jl
+│   │   ├── vcf.jl
+│   │   ├── export.jl
+│   │   └── import.jl
+│   ├── visualization/
+│   │   ├── plots.jl
+│   │   ├── reports.jl
+│   │   └── dashboard.jl
+│   └── utils/
+│       ├── statistics.jl
+│       ├── matrix_ops.jl
+│       └── helpers.jl
+├── test/
+│   ├── runtests.jl
+│   ├── core/
+│   ├── genomics/
+│   ├── models/
+│   └── integration/
+├── examples/
+│   ├── basic_usage.jl
+│   ├── dairy_cattle_analysis.jl
+│   ├── crossbreeding_optimization.jl
+│   └── multi_environment_prediction.jl
+└── benchmarks/
+    ├── performance.jl
+    └── accuracy_comparison.jl
+```
+
+Now let me implement the key modules systematically:
+
+## Core Module Implementation
+
+### src/core/constants.jl
+
+```julia
+# Core constants and configuration for OrthogonalGenomics.jl
+
+module Constants
+
+# Numerical constants
+const EPSILON = 1e-10
+const RIDGE_LAMBDA = 1e-6
+const MAX_ITERATIONS = 1000
+const CONVERGENCE_TOL = 1e-8
+
+# Genetic constants
+const PLOIDY_DIPLOID = 2
+const MISSING_GENOTYPE = -9
+const HETEROZYGOUS = 1
+
+# Model defaults
+const DEFAULT_MAF_FILTER = 0.01
+const DEFAULT_CALL_RATE = 0.95
+const DEFAULT_HWE_PVALUE = 1e-6
+
+# Parallel processing
+const MIN_MARKERS_FOR_PARALLEL = 10000
+const MIN_INDIVIDUALS_FOR_PARALLEL = 1000
+
+# Memory management
+const CHUNK_SIZE = 10000
+const MAX_MEMORY_GB = 16.0
+
+# File formats
+const SUPPORTED_FORMATS = [:plink, :vcf, :csv, :hdf5]
+const COMPRESSION_FORMATS = [:gzip, :bzip2, :xz]
+
+export EPSILON, RIDGE_LAMBDA, MAX_ITERATIONS, CONVERGENCE_TOL,
+       PLOIDY_DIPLOID, MISSING_GENOTYPE, HETEROZYGOUS,
+       DEFAULT_MAF_FILTER, DEFAULT_CALL_RATE, DEFAULT_HWE_PVALUE,
+       MIN_MARKERS_FOR_PARALLEL, MIN_INDIVIDUALS_FOR_PARALLEL,
+       CHUNK_SIZE, MAX_MEMORY_GB,
+       SUPPORTED_FORMATS, COMPRESSION_FORMATS
+
+end
+```
+
+### src/core/encoding.jl
+
+```julia
+# NOIA-based orthogonal genotype encoding
+
+module Encoding
+
+using LinearAlgebra
+using Statistics
+using ..Constants
+
+export noia_encode, update_allele_frequencies!, encode_dominance_indicators,
+       standardize_genotypes, get_encoding_matrix
+
+"""
+    noia_encode(genotypes::AbstractMatrix{T}, allele_freq::AbstractVector{<:Real}; 
+                ploidy::Int=2) where T<:Real
+
+Encode genotypes using NOIA (Natural and Orthogonal Interactions) parameterization.
+Supports both diploid and polyploid species.
+
+# Arguments
+- `genotypes`: N × M genotype matrix (0, 1, ..., ploidy)
+- `allele_freq`: M-vector of reference allele frequencies
+- `ploidy`: Ploidy level (default: 2 for diploid)
+
+# Returns
+- `X`: N × M additive encoded matrix
+- `Z`: N × M dominance encoded matrix (for diploid only)
+
+# References
+Álvarez-Castro & Carlborg (2007) Genetics 176:1151-1167
+"""
+function noia_encode(genotypes::AbstractMatrix{T}, 
+                    allele_freq::AbstractVector{<:Real}; 
+                    ploidy::Int=2) where T<:Real
+    
+    n, m = size(genotypes)
+    @assert length(allele_freq) == m "Allele frequency dimension mismatch"
+    @assert all(0 .<= allele_freq .<= 1) "Invalid allele frequencies"
+    
+    X = zeros(Float64, n, m)  # Additive encoding
+    Z = zeros(Float64, n, m)  # Dominance encoding
+    
+    if ploidy == 2
+        # Diploid encoding
+        Threads.@threads for j in 1:m
+            p = allele_freq[j]
+            q = 1.0 - p
+            
+            # Skip monomorphic sites
+            if p < EPSILON || q < EPSILON
+                continue
+            end
+            
+            # Scaling factor for orthogonality
+            scale_add = sqrt(2 * p * q)
+            scale_dom = sqrt(p * q)
+            
+            @inbounds for i in 1:n
+                g = genotypes[i, j]
+                
+                # Handle missing genotypes
+                if g < 0
+                    X[i, j] = 0.0
+                    Z[i, j] = 0.0
+                    continue
+                end
+                
+                # Additive coding: (g - 2p) / sqrt(2pq)
+                X[i, j] = (g - 2p) / scale_add
+                
+                # Dominance coding for heterozygotes
+                if g == 1
+                    Z[i, j] = (1 - 2p*q) / scale_dom
+                else
+                    Z[i, j] = -2p*q / scale_dom
+                end
+            end
+        end
+    else
+        # Polyploid encoding (additive only)
+        Threads.@threads for j in 1:m
+            p = allele_freq[j]
+            
+            if p < EPSILON || p > 1 - EPSILON
+                continue
+            end
+            
+            scale = sqrt(ploidy * p * (1 - p))
+            
+            @inbounds for i in 1:n
+                g = genotypes[i, j]
+                if g >= 0
+                    X[i, j] = (g - ploidy * p) / scale
+                end
+            end
+        end
+    end
+    
+    return X, Z
+end
+
+"""
+    update_allele_frequencies!(geno_data::GenotypeData; method::Symbol=:empirical)
+
+Update allele frequencies in GenotypeData object.
+
+# Arguments
+- `geno_data`: GenotypeData object to update
+- `method`: Frequency estimation method (:empirical, :em, :bayesian)
+"""
+function update_allele_frequencies!(geno_data::GenotypeData; 
+                                   method::Symbol=:empirical)
+    
+    if method == :empirical
+        # Simple frequency calculation
+        Threads.@threads for j in 1:geno_data.n_markers
+            valid_genotypes = filter(g -> g >= 0, geno_data.genotypes[:, j])
+            if !isempty(valid_genotypes)
+                geno_data.allele_freq[j] = mean(valid_genotypes) / geno_data.ploidy
+            end
+        end
+    elseif method == :em
+        # EM algorithm for missing data
+        allele_freq_em!(geno_data)
+    elseif method == :bayesian
+        # Bayesian frequency estimation with prior
+        allele_freq_bayesian!(geno_data)
+    else
+        error("Unknown frequency estimation method: $method")
+    end
+    
+    return geno_data
+end
+
+"""
+    encode_dominance_indicators(genotypes::AbstractMatrix{T}; 
+                               heterozygous_value::T=1) where T<:Real
+
+Create binary dominance indicators for heterozygous genotypes.
+"""
+function encode_dominance_indicators(genotypes::AbstractMatrix{T}; 
+                                   heterozygous_value::T=1) where T<:Real
+    return Float64.(genotypes .== heterozygous_value)
+end
+
+"""
+    standardize_genotypes(X::AbstractMatrix{<:Real})
+
+Standardize encoded genotypes to have mean 0 and variance 1 per marker.
+"""
+function standardize_genotypes(X::AbstractMatrix{<:Real})
+    X_std = copy(X)
+    
+    Threads.@threads for j in 1:size(X, 2)
+        col = view(X_std, :, j)
+        μ = mean(col)
+        σ = std(col)
+        
+        if σ > EPSILON
+            col .-= μ
+            col ./= σ
+        else
+            col .= 0.0
+        end
+    end
+    
+    return X_std
+end
+
+"""
+    get_encoding_matrix(n_genotypes::Int, allele_freq::Real; 
+                       encoding::Symbol=:noia)
+
+Get the encoding matrix for a single locus.
+"""
+function get_encoding_matrix(n_genotypes::Int, allele_freq::Real; 
+                           encoding::Symbol=:noia)
+    
+    p = allele_freq
+    q = 1 - p
+    
+    if encoding == :noia
+        # NOIA orthogonal encoding
+        if n_genotypes == 3  # Diploid
+            E = zeros(3, 2)  # [additive, dominance]
+            
+            # Additive effects
+            E[1, 1] = -2q / sqrt(2p*q)  # AA
+            E[2, 1] = (p - q) / sqrt(2p*q)  # Aa
+            E[3, 1] = 2p / sqrt(2p*q)  # aa
+            
+            # Dominance effects
+            E[1, 2] = -2p*q / sqrt(p*q)  # AA
+            E[2, 2] = (1 - 2p*q) / sqrt(p*q)  # Aa
+            E[3, 2] = -2p*q / sqrt(p*q)  # aa
+            
+            return E
+        end
+    elseif encoding == :additive
+        # Simple additive encoding
+        E = collect(0:(n_genotypes-1)) .- (n_genotypes-1)*p
+        return reshape(E, :, 1)
+    end
+    
+    error("Unsupported encoding: $encoding for $n_genotypes genotypes")
+end
+
+# Private helper functions
+
+function allele_freq_em!(geno_data::GenotypeData; max_iter::Int=100, tol::Float64=1e-6)
+    # EM algorithm implementation for missing genotypes
+    n, m = size(geno_data.genotypes)
+    
+    for j in 1:m
+        p_old = geno_data.allele_freq[j]
+        
+        for iter in 1:max_iter
+            # E-step: compute expected genotypes
+            exp_sum = 0.0
+            n_valid = 0
+            
+            for i in 1:n
+                g = geno_data.genotypes[i, j]
+                if g >= 0
+                    exp_sum += g
+                    n_valid += 1
+                else
+                    # Impute based on HWE
+                    exp_g = 2 * p_old
+                    exp_sum += exp_g
+                    n_valid += 1
+                end
+            end
+            
+            # M-step: update frequency
+            p_new = exp_sum / (2 * n_valid)
+            
+            # Check convergence
+            if abs(p_new - p_old) < tol
+                geno_data.allele_freq[j] = p_new
+                break
+            end
+            
+            p_old = p_new
+        end
+    end
+end
+
+function allele_freq_bayesian!(geno_data::GenotypeData; 
+                              prior_alpha::Float64=0.5, 
+                              prior_beta::Float64=0.5)
+    # Bayesian frequency estimation with Beta prior
+    n, m = size(geno_data.genotypes)
+    
+    Threads.@threads for j in 1:m
+        # Count alleles
+        n_ref = 0
+        n_alt = 0
+        
+        for i in 1:n
+            g = geno_data.genotypes[i, j]
+            if g >= 0
+                n_ref += g
+                n_alt += (2 - g)
+            end
+        end
+        
+        # Posterior mean with Beta prior
+        geno_data.allele_freq[j] = (n_ref + prior_alpha) / 
+                                   (n_ref + n_alt + prior_alpha + prior_beta)
+    end
+end
+
+end # module Encoding
+```
+
+### src/core/validation.jl
+
+```julia
+# Input validation and data integrity checks
+
+module Validation
+
+using Statistics
+using LinearAlgebra
+using DataFrames
+using ..Constants
+
+export validate_genotypes, validate_phenotypes, validate_grm,
+       check_data_integrity, validate_model_inputs
+
+"""
+    validate_genotypes(genotypes::AbstractMatrix; 
+                      ploidy::Int=2, 
+                      allow_missing::Bool=true)
+
+Validate genotype matrix format and values.
+"""
+function validate_genotypes(genotypes::AbstractMatrix; 
+                          ploidy::Int=2, 
+                          allow_missing::Bool=true)
+    
+    n, m = size(genotypes)
+    
+    # Check dimensions
+    if n == 0 || m == 0
+        throw(ArgumentError("Genotype matrix cannot be empty"))
+    end
+    
+    if n > m
+        @warn "More individuals than markers. Transposed matrix?" n=n m=m
+    end
+    
+    # Check value ranges
+    valid_values = 0:ploidy
+    if allow_missing
+        valid_values = union(valid_values, [MISSING_GENOTYPE])
+    end
+    
+    invalid_mask = .!in.(genotypes, Ref(valid_values))
+    n_invalid = sum(invalid_mask)
+    
+    if n_invalid > 0
+        invalid_vals = unique(genotypes[invalid_mask])
+        throw(ArgumentError("Invalid genotype values found: $invalid_vals"))
+    end
+    
+    # Check missingness
+    missing_rate = sum(genotypes .== MISSING_GENOTYPE) / (n * m)
+    if missing_rate > 0.5
+        @warn "High missing rate in genotypes" rate=missing_rate
+    end
+    
+    # Check for all missing markers or individuals
+    markers_all_missing = findall(j -> all(genotypes[:, j] .== MISSING_GENOTYPE), 1:m)
+    if !isempty(markers_all_missing)
+        @warn "Markers with all missing values" n_markers=length(markers_all_missing)
+    end
+    
+    individuals_all_missing = findall(i -> all(genotypes[i, :] .== MISSING_GENOTYPE), 1:n)
+    if !isempty(individuals_all_missing)
+        @warn "Individuals with all missing values" n_individuals=length(individuals_all_missing)
+    end
+    
+    return Dict(
+        :valid => true,
+        :n_individuals => n,
+        :n_markers => m,
+        :missing_rate => missing_rate,
+        :markers_all_missing => markers_all_missing,
+        :individuals_all_missing => individuals_all_missing
+    )
+end
+
+"""
+    validate_phenotypes(phenotypes::AbstractVecOrMat; 
+                       allow_missing::Bool=true)
+
+Validate phenotype data format and distribution.
+"""
+function validate_phenotypes(phenotypes::AbstractVecOrMat; 
+                           allow_missing::Bool=true)
+    
+    # Convert to matrix if vector
+    pheno_mat = phenotypes isa AbstractVector ? reshape(phenotypes, :, 1) : phenotypes
+    n, p = size(pheno_mat)
+    
+    # Check dimensions
+    if n == 0
+        throw(ArgumentError("No phenotype data provided"))
+    end
+    
+    validation_results = Dict{Symbol, Any}[]
+    
+    for trait in 1:p
+        trait_data = pheno_mat[:, trait]
+        
+        # Check for missingness
+        if allow_missing
+            missing_mask = ismissing.(trait_data) .| isnan.(trait_data)
+            valid_data = trait_data[.!missing_mask]
+            missing_rate = sum(missing_mask) / n
+        else
+            if any(ismissing.(trait_data) .| isnan.(trait_data))
+                throw(ArgumentError("Missing values not allowed in phenotypes"))
+            end
+            valid_data = trait_data
+            missing_rate = 0.0
+        end
+        
+        if isempty(valid_data)
+            throw(ArgumentError("Trait $trait has no valid observations"))
+        end
+        
+        # Check distribution properties
+        trait_mean = mean(valid_data)
+        trait_std = std(valid_data)
+        trait_skew = skewness(valid_data)
+        trait_kurt = kurtosis(valid_data)
+        
+        # Check for zero variance
+        if trait_std < EPSILON
+            @warn "Trait $trait has zero variance"
+        end
+        
+        # Check for extreme outliers
+        z_scores = abs.((valid_data .- trait_mean) ./ trait_std)
+        n_outliers = sum(z_scores .> 5)
+        
+        if n_outliers > 0
+            @warn "Trait $trait has extreme outliers" n_outliers=n_outliers
+        end
+        
+        push!(validation_results, Dict(
+            :trait => trait,
+            :n_valid => length(valid_data),
+            :missing_rate => missing_rate,
+            :mean => trait_mean,
+            :std => trait_std,
+            :skewness => trait_skew,
+            :kurtosis => trait_kurt,
+            :n_outliers => n_outliers
+        ))
+    end
+    
+    return validation_results
+end
+
+"""
+    validate_grm(G::AbstractMatrix; check_pd::Bool=true)
+
+Validate genomic relationship matrix properties.
+"""
+function validate_grm(G::AbstractMatrix; check_pd::Bool=true)
+    
+    n = size(G, 1)
+    
+    # Check square
+    if size(G, 2) != n
+        throw(ArgumentError("GRM must be square"))
+    end
+    
+    # Check symmetry
+    if !issymmetric(G)
+        max_asym = maximum(abs.(G - G'))
+        if max_asym > EPSILON
+            throw(ArgumentError("GRM is not symmetric (max asymmetry: $max_asym)"))
+        else
+            # Make exactly symmetric
+            G = 0.5 * (G + G')
+        end
+    end
+    
+    # Check diagonal (self-relationships)
+    diag_vals = diag(G)
+    if any(diag_vals .< 0)
+        throw(ArgumentError("Negative diagonal values in GRM"))
+    end
+    
+    # Expected diagonal values around 1 + F (inbreeding)
+    mean_diag = mean(diag_vals)
+    if abs(mean_diag - 1.0) > 0.5
+        @warn "Unusual diagonal values in GRM" mean=mean_diag
+    end
+    
+    # Check positive definiteness
+    if check_pd
+        eigenvals = eigvals(Symmetric(G))
+        min_eigenval = minimum(eigenvals)
+        
+        if min_eigenval < -EPSILON
+            throw(ArgumentError("GRM is not positive semi-definite (min eigenvalue: $min_eigenval)"))
+        elseif min_eigenval < RIDGE_LAMBDA
+            @warn "GRM is nearly singular, adding ridge" min_eigenval=min_eigenval
+        end
+    end
+    
+    # Check value ranges
+    off_diag = G[triu(ones(Bool, n, n), 1)]
+    min_val, max_val = extrema(off_diag)
+    
+    if min_val < -1.5 || max_val > 2.0
+        @warn "Unusual relationship values" min=min_val max=max_val
+    end
+    
+    return Dict(
+        :valid => true,
+        :dimension => n,
+        :mean_diagonal => mean_diag,
+        :mean_off_diagonal => mean(off_diag),
+        :min_relationship => min_val,
+        :max_relationship => max_val,
+        :symmetric => true,
+        :positive_definite => check_pd ? min_eigenval > 0 : nothing
+    )
+end
+
+"""
+    check_data_integrity(geno_data::GenotypeData, phenotypes::AbstractMatrix)
+
+Comprehensive data integrity checks before analysis.
+"""
+function check_data_integrity(geno_data::GenotypeData, phenotypes::AbstractMatrix)
+    
+    # Check dimension consistency
+    if geno_data.n_individuals != size(phenotypes, 1)
+        throw(DimensionMismatch("Number of individuals in genotypes ($(geno_data.n_individuals)) " *
+                               "does not match phenotypes ($(size(phenotypes, 1)))"))
+    end
+    
+    # Validate individual components
+    geno_validation = validate_genotypes(geno_data.genotypes; ploidy=geno_data.ploidy)
+    pheno_validation = validate_phenotypes(phenotypes)
+    
+    # Check sample alignment
+    if !isempty(geno_data.sample_info) && hasproperty(geno_data.sample_info, :ID)
+        # Verify sample IDs match
+        geno_ids = Set(geno_data.sample_info.ID)
+        if length(geno_ids) != geno_data.n_individuals
+            @warn "Duplicate sample IDs detected"
+        end
+    end
+    
+    # Check marker properties
+    maf = geno_data.allele_freq .* (1 .- geno_data.allele_freq)
+    n_monomorphic = sum(maf .< EPSILON)
+    if n_monomorphic > 0
+        @warn "Monomorphic markers present" count=n_monomorphic
+    end
+    
+    # Check for related individuals (optional)
+    if geno_data.n_individuals <= 5000  # Only for smaller datasets
+        G_temp = compute_simple_grm(geno_data)
+        off_diag = G_temp[triu(ones(Bool, size(G_temp)...), 1)]
+        n_highly_related = sum(off_diag .> 0.45)  # Half-sibs or closer
+        
+        if n_highly_related > 0
+            @warn "Highly related individual pairs detected" count=n_highly_related
+        end
+    end
+    
+    return Dict(
+        :genotype_validation => geno_validation,
+        :phenotype_validation => pheno_validation,
+        :n_monomorphic => n_monomorphic,
+        :data_aligned => true
+    )
+end
+
+"""
+    validate_model_inputs(; kwargs...)
+
+Validate all inputs for model fitting.
+"""
+function validate_model_inputs(; 
+    population::Union{Population, Nothing}=nothing,
+    variance_components::Union{VarianceComponents, Nothing}=nothing,
+    fixed_effects::Union{AbstractMatrix, Nothing}=nothing,
+    random_effects::Union{Dict, Nothing}=nothing,
+    kwargs...)
+    
+    validations = Dict{Symbol, Any}()
+    
+    # Validate population data
+    if !isnothing(population)
+        validations[:population] = check_data_integrity(
+            population.genotype_data, 
+            population.phenotypes
+        )
+    end
+    
+    # Validate variance components
+    if !isnothing(variance_components)
+        vc = variance_components.estimates
+        if any(x -> x < 0, vc)
+            throw(ArgumentError("Negative variance components"))
+        end
+        
+        if vc.σ²_e < EPSILON
+            @warn "Residual variance near zero"
+        end
+        
+        validations[:variance_components] = true
+    end
+    
+    # Validate fixed effects design matrix
+    if !isnothing(fixed_effects)
+        if !isnothing(population) && size(fixed_effects, 1) != population.genotype_data.n_individuals
+            throw(DimensionMismatch("Fixed effects dimension mismatch"))
+        end
+        
+        # Check for collinearity
+        if size(fixed_effects, 2) > 1
+            rank_X = rank(fixed_effects)
+            if rank_X < size(fixed_effects, 2)
+                @warn "Fixed effects design matrix is not full rank"
+            end
+        end
+        
+        validations[:fixed_effects] = true
+    end
+    
+    return validations
+end
+
+# Helper functions
+
+function skewness(x::AbstractVector)
+    n = length(x)
+    m = mean(x)
+    s = std(x)
+    return sum(((x .- m) ./ s).^3) / n
+end
+
+function kurtosis(x::AbstractVector)
+    n = length(x)
+    m = mean(x)
+    s = std(x)
+    return sum(((x .- m) ./ s).^4) / n - 3
+end
+
+function compute_simple_grm(geno_data::GenotypeData)
+    # Quick GRM computation for validation
+    X = geno_data.genotypes .- 2 * geno_data.allele_freq'
+    scale = sum(2 * geno_data.allele_freq .* (1 .- geno_data.allele_freq))
+    return (X * X') / scale
+end
+
+end # module Validation
+```
+
+### src/genomics/grm_construction.jl
+
+```julia
+# Genomic Relationship Matrix (GRM) construction module
+
+module GRMConstruction
+
+using LinearAlgebra
+using Statistics
+using SparseArrays
+using Distributed
+using SharedArrays
+using ProgressMeter
+using ..Constants
+using ..Encoding
+using ..Validation
+
+export compute_grm, compute_grm_set, build_sparse_grm,
+       compute_weighted_grm, compute_adaptive_grm,
+       GRMMethod, VanRadenMethod, YangMethod, SpeedMethod
+
+# GRM computation methods
+abstract type GRMMethod end
+struct VanRadenMethod <: GRMMethod end
+struct YangMethod <: GRMMethod end
+struct SpeedMethod <: GRMMethod end
+struct AsRemlMethod <: GRMMethod end
+
+"""
+    compute_grm(X::AbstractMatrix{<:Real}, allele_freq::AbstractVector{<:Real};
+                method::GRMMethod=VanRadenMethod(),
+                scale::Bool=true,
+                center::Bool=true,
+                ridge::Real=RIDGE_LAMBDA)
+
+Compute genomic relationship matrix using specified method.
+
+# Arguments
+- `X`: Genotype matrix (can be raw or encoded)
+- `allele_freq`: Allele frequencies
+- `method`: GRM computation method
+- `scale`: Whether to scale by genetic variance
+- `center`: Whether to center genotypes
+- `ridge`: Ridge parameter for numerical stability
+"""
+function compute_grm(X::AbstractMatrix{<:Real}, 
+                    allele_freq::AbstractVector{<:Real};
+                    method::GRMMethod=VanRadenMethod(),
+                    scale::Bool=true,
+                    center::Bool=true,
+                    ridge::Real=RIDGE_LAMBDA)
+    
+    n, m = size(X)
+    
+    # Encode genotypes if needed
+    if center
+        W = encode_for_grm(X, allele_freq, method)
+    else
+        W = X
+    end
+    
+    # Compute GRM based on method
+    if isa(method, VanRadenMethod)
+        G = compute_vanraden_grm(W, allele_freq, scale)
+    elseif isa(method, YangMethod)
+        G = compute_yang_grm(W, allele_freq)
+    elseif isa(method, SpeedMethod)
+        G = compute_speed_grm(W, allele_freq)
+    else
+        error("Unknown GRM method: $(typeof(method))")
+    end
+    
+    # Ensure numerical stability
+    G = 0.5 * (G + G')  # Symmetrize
+    if ridge > 0
+        G[diagind(G)] .+= ridge
+    end
+    
+    # Validate result
+    validate_grm(G, check_pd=true)
+    
+    return G
+end
+
+"""
+    compute_grm_set(geno_data::GenotypeData; 
+                   include_dominance::Bool=true,
+                   include_epistasis::Bool=true,
+                   parallel::Bool=true)
+
+Compute complete set of GRMs including epistatic interactions.
+"""
+function compute_grm_set(geno_data::GenotypeData; 
+                        include_dominance::Bool=true,
+                        include_epistasis::Bool=true,
+                        parallel::Bool=true)
+    
+    # Update allele frequencies
+    update_allele_frequencies!(geno_data)
+    
+    # NOIA encoding
+    @info "Computing NOIA encoding"
+    X, Z = noia_encode(geno_data.genotypes, geno_data.allele_freq)
+    
+    # Determine if parallel computation is beneficial
+    use_parallel = parallel && 
+                   geno_data.n_markers >= MIN_MARKERS_FOR_PARALLEL &&
+                   geno_data.n_individuals >= MIN_INDIVIDUALS_FOR_PARALLEL
+    
+    # Compute base GRMs
+    @info "Computing additive GRM"
+    if use_parallel
+        G = compute_grm_parallel(X, geno_data.allele_freq)
+    else
+        G = compute_grm(X, geno_data.allele_freq)
+    end
+    
+    # Initialize with identity matrices if components not requested
+    n = geno_data.n_individuals
+    D = include_dominance ? nothing : Matrix(1.0I, n, n)
+    G_AA = include_epistasis ? nothing : Matrix(1.0I, n, n)
+    G_AD = include_epistasis ? nothing : Matrix(1.0I, n, n)
+    G_DD = include_epistasis ? nothing : Matrix(1.0I, n, n)
+    
+    if include_dominance
+        @info "Computing dominance GRM"
+        D = use_parallel ? compute_grm_parallel(Z, geno_data.allele_freq) :
+                          compute_grm(Z, geno_data.allele_freq)
+    end
+    
+    if include_epistasis
+        @info "Computing epistatic GRMs"
+        G_AA, G_AD, G_DD = compute_epistatic_grms(G, D)
+    end
+    
+    # Compute eigendecomposition if beneficial
+    eigendecomp = nothing
+    if geno_data.n_individuals <= 5000
+        eigendecomp = compute_eigen_decomposition(G, D, G_AA, G_AD, G_DD)
+    end
+    
+    # Compute trace ratios for scaling
+    trace_ratios = (
+        G = tr(G) / n,
+        D = include_dominance ? tr(D) / n : 1.0,
+        G_AA = include_epistasis ? tr(G_AA) / n : 1.0,
+        G_AD = include_epistasis ? tr(G_AD) / n : 1.0,
+        G_DD = include_epistasis ? tr(G_DD) / n : 1.0
+    )
+    
+    return GRMSet(
+        G, D, G_AA, G_AD, G_DD,
+        eigendecomp,
+        trace_ratios,
+        0,  # Current generation
+        copy(geno_data.allele_freq)
+    )
+end
+
+# Method-specific implementations
+
+function compute_vanraden_grm(W::AbstractMatrix{<:Real}, 
+                             allele_freq::AbstractVector{<:Real},
+                             scale::Bool)
+    n, m = size(W)
+    
+    # Compute scaling factor
+    if scale
+        scale_factor = sum(2 .* allele_freq .* (1 .- allele_freq))
+    else
+        scale_factor = m
+    end
+    
+    # G = WW' / scale_factor
+    G = (W * W') / scale_factor
+    
+    return G
+end
+
+function compute_yang_grm(W::AbstractMatrix{<:Real}, 
+                         allele_freq::AbstractVector{<:Real})
+    n, m = size(W)
+    G = zeros(n, n)
+    
+    # Yang's method: normalize each SNP individually
+    @inbounds for j in 1:m
+        p = allele_freq[j]
+        if p > EPSILON && p < 1 - EPSILON
+            w_j = view(W, :, j)
+            var_j = 2 * p * (1 - p)
+            G .+= (w_j * w_j') / var_j
+        end
+    end
+    
+    G ./= m
+    
+    return G
+end
+
+function compute_speed_grm(W::AbstractMatrix{<:Real}, 
+                          allele_freq::AbstractVector{<:Real})
+    # Speed's realized relationship matrix
+    n, m = size(W)
+    
+    # Center by row means instead of allele frequencies
+    W_centered = W .- mean(W, dims=2)
+    
+    # Compute covariance
+    G = (W_centered * W_centered') / (m - 1)
+    
+    return G
+end
+
+"""
+    compute_epistatic_grms(G::AbstractMatrix{<:Real}, 
+                          D::Union{AbstractMatrix{<:Real}, Nothing})
+
+Compute epistatic GRMs using Hadamard products.
+"""
+function compute_epistatic_grms(G::AbstractMatrix{<:Real}, 
+                               D::Union{AbstractMatrix{<:Real}, Nothing})
+    n = size(G, 1)
+    
+    # Additive × Additive
+    @info "Computing G_AA (Hadamard product)"
+    G_AA = G .* G
+    
+    if isnothing(D)
+        # If no dominance, create placeholder matrices
+        G_AD = Matrix(1.0I, n, n)
+        G_DD = Matrix(1.0I, n, n)
+    else
+        # Additive × Dominance
+        @info "Computing G_AD"
+        G_AD = G .* D
+        
+        # Dominance × Dominance
+        @info "Computing G_DD"
+        G_DD = D .* D
+    end
+    
+    # Normalize traces
+    G_AA *= n / tr(G_AA)
+    if !isnothing(D)
+        G_AD *= n / tr(G_AD)
+        G_DD *= n / tr(G_DD)
+    end
+    
+    # Add ridge for stability
+    for M in [G_AA, G_AD, G_DD]
+        M[diagind(M)] .+= RIDGE_LAMBDA
+    end
+    
+    return G_AA, G_AD, G_DD
+end
+
+"""
+    compute_grm_parallel(X::AbstractMatrix{<:Real}, 
+                        allele_freq::AbstractVector{<:Real};
+                        n_threads::Int=Threads.nthreads())
+
+Parallel GRM computation for large datasets.
+"""
+function compute_grm_parallel(X::AbstractMatrix{<:Real}, 
+                             allele_freq::AbstractVector{<:Real};
+                             n_threads::Int=Threads.nthreads())
+    
+    n, m = size(X)
+    
+    # Initialize shared array
+    G = SharedArray{Float64}(n, n)
+    
+    # Compute scaling
+    scale_factor = sum(2 .* allele_freq .* (1 .- allele_freq))
+    
+    # Parallel computation of upper triangle
+    @sync begin
+        @distributed for idx in 1:div(n*(n+1), 2)
+            # Convert linear index to (i,j)
+            i = ceil(Int, (sqrt(8*idx + 1) - 1) / 2)
+            j = idx - div(i*(i-1), 2)
+            
+            # Compute dot product
+            g_ij = dot(view(X, i, :), view(X, j, :)) / scale_factor
+            G[i, j] = g_ij
+            if i != j
+                G[j, i] = g_ij
+            end
+        end
+    end
+    
+    return Matrix(G)
+end
+
+"""
+    build_sparse_grm(X::AbstractMatrix{<:Real}, 
+                    allele_freq::AbstractVector{<:Real};
+                    threshold::Real=0.05)
+
+Build sparse GRM by thresholding small relationships.
+"""
+function build_sparse_grm(X::AbstractMatrix{<:Real}, 
+                         allele_freq::AbstractVector{<:Real};
+                         threshold::Real=0.05)
+    
+    n, m = size(X)
+    scale_factor = sum(2 .* allele_freq .* (1 .- allele_freq))
+    
+    # Storage for sparse matrix
+    I_vec = Int[]
+    J_vec = Int[]
+    V_vec = Float64[]
+    
+    # Compute relationships and store if above threshold
+    @showprogress "Computing sparse GRM" for i in 1:n
+        for j in i:n
+            g_ij = dot(view(X, i, :), view(X, j, :)) / scale_factor
+            
+            if abs(g_ij) > threshold || i == j
+                push!(I_vec, i)
+                push!(J_vec, j)
+                push!(V_vec, g_ij)
+                
+                if i != j
+                    push!(I_vec, j)
+                    push!(J_vec, i)
+                    push!(V_vec, g_ij)
+                end
+            end
+        end
+    end
+    
+    # Create sparse matrix
+    G_sparse = sparse(I_vec, J_vec, V_vec, n, n)
+    
+    # Add ridge to diagonal
+    for i in 1:n
+        G_sparse[i, i] += RIDGE_LAMBDA
+    end
+    
+    @info "Sparse GRM created" size=size(G_sparse) nnz=nnz(G_sparse) sparsity=1-nnz(G_sparse)/(n^2)
+    
+    return G_sparse
+end
+
+"""
+    compute_weighted_grm(X::AbstractMatrix{<:Real}, 
+                        allele_freq::AbstractVector{<:Real},
+                        weights::AbstractVector{<:Real})
+
+Compute weighted GRM where markers have different importance.
+"""
+function compute_weighted_grm(X::AbstractMatrix{<:Real}, 
+                             allele_freq::AbstractVector{<:Real},
+                             weights::AbstractVector{<:Real})
+    
+    n, m = size(X)
+    @assert length(weights) == m "Weight vector dimension mismatch"
+    
+    # Apply weights to encoded genotypes
+    W_weighted = X .* sqrt.(weights')
+    
+    # Compute weighted scaling
+    scale_factor = sum(weights .* 2 .* allele_freq .* (1 .- allele_freq))
+    
+    # Compute weighted GRM
+    G = (W_weighted * W_weighted') / scale_factor
+    
+    return G
+end
+
+"""
+    compute_adaptive_grm(geno_data::GenotypeData, 
+                        trait_data::AbstractVector{<:Real};
+                        n_iterations::Int=10)
+
+Compute adaptive GRM with marker weights learned from trait.
+"""
+function compute_adaptive_grm(geno_data::GenotypeData, 
+                             trait_data::AbstractVector{<:Real};
+                             n_iterations::Int=10)
+    
+    # Initialize uniform weights
+    weights = ones(geno_data.n_markers)
+    
+    # Encode genotypes
+    X, _ = noia_encode(geno_data.genotypes, geno_data.allele_freq)
+    
+    for iter in 1:n_iterations
+        # Compute weighted GRM
+        G = compute_weighted_grm(X, geno_data.allele_freq, weights)
+        
+        # Fit model and get marker effects
+        λ = var(trait_data) * (1 - 0.5) / 0.5  # Assume h² = 0.5
+        effects = (G + λ * I) \ trait_data
+        
+        # Back-solve for marker effects
+        marker_effects = X' * effects / geno_data.n_individuals
+        
+        # Update weights based on marker effects
+        weights = abs.(marker_effects).^0.5
+        weights ./= mean(weights)  # Normalize
+        
+        @info "Adaptive GRM iteration $iter" mean_weight=mean(weights) std_weight=std(weights)
+    end
+    
+    # Final GRM with optimized weights
+    G_adaptive = compute_weighted_grm(X, geno_data.allele_freq, weights)
+    
+    return G_adaptive, weights
+end
+
+# Helper functions
+
+function encode_for_grm(genotypes::AbstractMatrix{<:Real},
+                       allele_freq::AbstractVector{<:Real},
+                       method::GRMMethod)
+    
+    n, m = size(genotypes)
+    W = zeros(n, m)
+    
+    if isa(method, VanRadenMethod)
+        # VanRaden encoding: (X - 2p) / sqrt(2p(1-p))
+        @inbounds for j in 1:m
+            p = allele_freq[j]
+            if p > EPSILON && p < 1 - EPSILON
+                scale = sqrt(2 * p * (1 - p))
+                for i in 1:n
+                    W[i, j] = (genotypes[i, j] - 2p) / scale
+                end
+            end
+        end
+    else
+        # Default centering
+        @inbounds for j in 1:m
+            p = allele_freq[j]
+            for i in 1:n
+                W[i, j] = genotypes[i, j] - 2p
+            end
+        end
+    end
+    
+    return W
+end
+
+function compute_eigen_decomposition(G::AbstractMatrix{<:Real}, 
+                                   D::Union{AbstractMatrix{<:Real}, Nothing},
+                                   G_AA::AbstractMatrix{<:Real},
+                                   G_AD::AbstractMatrix{<:Real},
+                                   G_DD::AbstractMatrix{<:Real})
+    
+    eigen_dict = Dict{Symbol, Matrix{Float64}}()
+    eigenval_dict = Dict{Symbol, Vector{Float64}}()
+    
+    # Compute eigendecomposition for each GRM
+    for (name, mat) in [(:G, G), (:D, D), (:G_AA, G_AA), (:G_AD, G_AD), (:G_DD, G_DD)]
+        if !isnothing(mat)
+            F = eigen(Symmetric(mat))
+            eigen_dict[name] = F.vectors
+            eigenval_dict[name] = F.values
+        end
+    end
+    
+    return EigenDecomposition(eigen_dict, eigenval_dict)
+end
+
+export compute_grm, compute_grm_set, build_sparse_grm,
+       compute_weighted_grm, compute_adaptive_grm,
+       compute_grm_parallel, compute_epistatic_grms
+
+end # module GRMConstruction
+```
+
+Now I'll continue with the variance components estimation module:
+
+### src/genomics/variance_components.jl
+
+```julia
+# Variance component estimation module
+
+module VarianceComponentEstimation
+
+using LinearAlgebra
+using Statistics
+using Optim
+using ForwardDiff
+using Distributions
+using ProgressMeter
+using ..Constants
+using ..Validation
+
+export estimate_variance_components, estimate_variance_components_em,
+       estimate_variance_components_aireml, estimate_heritability,
+       VarianceComponentMethod, REMLMethod, AIREMLMethod, EMMethod
+
+# Variance component estimation methods
+abstract type VarianceComponentMethod end
+struct REMLMethod <: VarianceComponentMethod end
+struct AIREMLMethod <: VarianceComponentMethod end
+struct EMMethod <: VarianceComponentMethod end
+struct BayesianMethod <: VarianceComponentMethod end
+
+"""
+    estimate_variance_components(y::AbstractVector{<:Real}, 
+                               grms::GRMSet;
+                               method::VarianceComponentMethod=AIREMLMethod(),
+                               fixed_effects::Union{AbstractMatrix{<:Real}, Nothing}=nothing,
+                               start_values::Union{NamedTuple, Nothing}=nothing,
+                               constraints::Union{Dict, Nothing}=nothing)
+
+Estimate variance components using specified method.
+"""
+function estimate_variance_components(y::AbstractVector{<:Real}, 
+                                    grms::GRMSet;
+                                    method::VarianceComponentMethod=AIREMLMethod(),
+                                    fixed_effects::Union{AbstractMatrix{<:Real}, Nothing}=nothing,
+                                    start_values::Union{NamedTuple, Nothing}=nothing,
+                                    constraints::Union{Dict, Nothing}=nothing)
+    
+    n = length(y)
+    
+    # Set up fixed effects
+    X = isnothing(fixed_effects) ? ones(n, 1) : fixed_effects
+    
+    # Validate inputs
+    validate_grm(grms.G)
+    @assert size(X, 1) == n "Fixed effects dimension mismatch"
+    
+    # Initial variance component values
+    if isnothing(start_values)
+        var_y = var(y)
+        start_values = (
+            σ²_a = 0.3 * var_y,
+            σ²_d = 0.05 * var_y,
+            σ²_aa = 0.05 * var_y,
+            σ²_ad = 0.02 * var_y,
+            σ²_dd = 0.02 * var_y,
+            σ²_e = 0.56 * var_y
+        )
+    end
+    
+    # Apply method
+    if isa(method, REMLMethod)
+        result = reml_estimation(y, X, grms, start_values, constraints)
+    elseif isa(method, AIREMLMethod)
+        result = aireml_estimation(y, X, grms, start_values, constraints)
+    elseif isa(method, EMMethod)
+        result = em_estimation(y, X, grms, start_values, constraints)
+    else
+        error("Unknown variance component method: $(typeof(method))")
+    end
+    
+    return result
+end
+
+"""
+    reml_estimation(y, X, grms, start_values, constraints)
+
+REML estimation using Newton-Raphson optimization.
+"""
+function reml_estimation(y::AbstractVector{<:Real},
+                        X::AbstractMatrix{<:Real},
+                        grms::GRMSet,
+                        start_values::NamedTuple,
+                        constraints::Union{Dict, Nothing})
+    
+    n = length(y)
+    p = size(X, 2)
+    
+    # Extract GRM components
+    kernel_dict = Dict(
+        :a => grms.G,
+        :d => grms.D,
+        :aa => grms.G_AA,
+        :ad => grms.G_AD,
+        :dd => grms.G_DD
+    )
+    
+    # Parameter vector
+    param_names = [:σ²_a, :σ²_d, :σ²_aa, :σ²_ad, :σ²_dd, :σ²_e]
+    θ_init = [getfield(start_values, name) for name in param_names]
+    
+    # Define objective function
+    function neg_log_likelihood(θ::Vector{T}) where T
+        # Ensure positive variances
+        if any(θ .< 0)
+            return T(Inf)
+        end
+        
+        # Construct V matrix
+        V = θ[1] * kernel_dict[:a] +
+            θ[2] * kernel_dict[:d] +
+            θ[3] * kernel_dict[:aa] +
+            θ[4] * kernel_dict[:ad] +
+            θ[5] * kernel_dict[:dd] +
+            θ[6] * I
+        
+        # Add small ridge for stability
+        V += RIDGE_LAMBDA * I
+        
+        # Cholesky decomposition
+        try
+            L = cholesky(Symmetric(V))
+            
+            # Compute P = V^{-1} - V^{-1}X(X'V^{-1}X)^{-1}X'V^{-1}
+            V_inv_X = L \ X
+            XtVinvX = X' * V_inv_X
+            XtVinvX_inv = inv(XtVinvX)
+            
+            # Compute log-likelihood components
+            logdet_V = 2 * sum(log.(diag(L.L)))
+            logdet_XtVinvX = logdet(XtVinvX)
+            
+            # Compute y'Py
+            V_inv_y = L \ y
+            XtVinv_y = X' * V_inv_y
+            y_Py = dot(y, V_inv_y) - dot(XtVinv_y, XtVinvX_inv * XtVinv_y)
+            
+            # REML log-likelihood (negative)
+            loglik = 0.5 * (logdet_V + logdet_XtVinvX + y_Py)
+            
+            return loglik
+        catch e
+            return T(Inf)
+        end
+    end
+    
+    # Optimize with constraints
+    if !isnothing(constraints)
+        lower = [get(constraints, name, 0.0) for name in param_names]
+        upper = [get(constraints, name, Inf) for name in param_names]
+        
+        result = optimize(neg_log_likelihood, lower, upper, θ_init,
+                         Fminbox(LBFGS()),
+                         Optim.Options(iterations=100, g_tol=1e-6))
+    else
+        # Unconstrained optimization with transformation
+        function transformed_objective(log_θ)
+            θ = exp.(log_θ)
+            return neg_log_likelihood(θ)
+        end
+        
+        result = optimize(transformed_objective, log.(θ_init),
+                         LBFGS(),
+                         Optim.Options(iterations=100, g_tol=1e-6))
+        
+        # Transform back
+        θ_opt = exp.(Optim.minimizer(result))
+    end
+    
+    # Extract optimal parameters
+    if !isnothing(constraints)
+        θ_opt = Optim.minimizer(result)
+    end
+    
+    # Compute standard errors using observed information matrix
+    se_values = compute_standard_errors(θ_opt, neg_log_likelihood)
+    
+    # Create result structure
+    estimates = NamedTuple{param_names}(θ_opt)
+    se_names = [Symbol("se_" * String(name)[4:end]) for name in param_names]
+    standard_errors = NamedTuple{se_names}(se_values)
+    
+    # Compute heritabilities
+    σ²_p = sum(θ_opt)
+    h² = θ_opt[1] / σ²_p
+    H² = sum(θ_opt[1:5]) / σ²_p
+    
+    # Standard errors for heritabilities (delta method)
+    h²_se = compute_heritability_se(θ_opt, se_values, :narrow)
+    H²_se = compute_heritability_se(θ_opt, se_values, :broad)
+    
+    # Convergence info
+    convergence = ConvergenceInfo(
+        Optim.converged(result),
+        Optim.iterations(result),
+        Optim.g_residual(result),
+        Optim.g_residual(result),
+        0.0,  # Parameter change
+        Optim.iteration_limit_reached(result) ? "Iteration limit reached" : "Converged"
+    )
+    
+    # Proportion of variance
+    prop_var = NamedTuple{param_names}(θ_opt ./ σ²_p)
+    
+    return VarianceComponents(
+        estimates,
+        standard_errors,
+        h²,
+        H²,
+        h²_se,
+        H²_se,
+        -Optim.minimum(result),  # Log-likelihood
+        convergence,
+        prop_var
+    )
+end
+
+"""
+    aireml_estimation(y, X, grms, start_values, constraints)
+
+Average Information REML - more efficient for large datasets.
+"""
+function aireml_estimation(y::AbstractVector{<:Real},
+                          X::AbstractMatrix{<:Real},
+                          grms::GRMSet,
+                          start_values::NamedTuple,
+                          constraints::Union{Dict, Nothing})
+    
+    n = length(y)
+    p = size(X, 2)
+    
+    # Setup
+    kernels = [grms.G, grms.D, grms.G_AA, grms.G_AD, grms.G_DD, I(n)]
+    n_components = length(kernels)
+    
+    # Initialize parameters
+    θ = [start_values.σ²_a, start_values.σ²_d, start_values.σ²_aa,
+         start_values.σ²_ad, start_values.σ²_dd, start_values.σ²_e]
+    
+    # AI-REML iterations
+    max_iter = 50
+    tol = 1e-6
+    
+    @showprogress "AI-REML iterations" for iter in 1:max_iter
+        θ_old = copy(θ)
+        
+        # Construct V and its inverse
+        V = sum(θ[i] * kernels[i] for i in 1:n_components)
+        V += RIDGE_LAMBDA * I
+        
+        # Compute P = V^{-1} - V^{-1}X(X'V^{-1}X)^{-1}X'V^{-1}
+        L = cholesky(Symmetric(V))
+        V_inv = inv(L)
+        V_inv_X = V_inv * X
+        XtVinvX_inv = inv(X' * V_inv_X)
+        P = V_inv - V_inv_X * XtVinvX_inv * V_inv_X'
+        
+        # Compute score vector and average information matrix
+        s = zeros(n_components)
+        AI = zeros(n_components, n_components)
+        
+        Py = P * y
+        
+        for i in 1:n_components
+            # Score: s_i = -0.5 * tr(P * K_i) + 0.5 * y' * P * K_i * P * y
+            PK_i = P * kernels[i]
+            s[i] = -0.5 * tr(PK_i) + 0.5 * dot(y, PK_i * Py)
+            
+            # Average Information: AI_ij = 0.5 * y' * P * K_i * P * K_j * P * y
+            for j in i:n_components
+                AI[i,j] = 0.5 * dot(Py, kernels[i] * P * kernels[j] * Py)
+                AI[j,i] = AI[i,j]
+            end
+        end
+        
+        # Update parameters
+        try
+            Δθ = AI \ s
+            θ_new = θ + Δθ
+            
+            # Apply constraints
+            if !isnothing(constraints)
+                for i in 1:n_components
+                    name = [:σ²_a, :σ²_d, :σ²_aa, :σ²_ad, :σ²_dd, :σ²_e][i]
+                    θ_new[i] = max(get(constraints, name, (0.0, Inf))[1], θ_new[i])
+                    θ_new[i] = min(get(constraints, name, (0.0, Inf))[2], θ_new[i])
+                end
+            else
+                # Ensure positive
+                θ_new = max.(θ_new, EPSILON)
+            end
+            
+            θ = θ_new
+        catch e
+            @warn "AI matrix singular at iteration $iter"
+            break
+        end
+        
+        # Check convergence
+        param_change = maximum(abs.(θ - θ_old))
+        if param_change < tol
+            @info "AI-REML converged" iteration=iter
+            break
+        end
+    end
+    
+    # Compute final results
+    param_names = [:σ²_a, :σ²_d, :σ²_aa, :σ²_ad, :σ²_dd, :σ²_e]
+    estimates = NamedTuple{param_names}(θ)
+    
+    # Standard errors from inverse of AI matrix
+    V_final = sum(θ[i] * kernels[i] for i in 1:n_components)
+    L = cholesky(Symmetric(V_final + RIDGE_LAMBDA * I))
+    V_inv = inv(L)
+    V_inv_X = V_inv * X
+    P = V_inv - V_inv_X * inv(X' * V_inv_X) * V_inv_X'
+    
+    # Recompute AI at convergence
+    AI_final = zeros(n_components, n_components)
+    Py = P * y
+    
+    for i in 1:n_components
+        for j in i:n_components
+            AI_final[i,j] = 0.5 * dot(Py, kernels[i] * P * kernels[j] * Py)
+            AI_final[j,i] = AI_final[i,j]
+        end
+    end
+    
+    se_values = sqrt.(diag(inv(AI_final)))
+    se_names = [Symbol("se_" * String(name)[4:end]) for name in param_names]
+    standard_errors = NamedTuple{se_names}(se_values)
+    
+    # Heritabilities
+    σ²_p = sum(θ)
+    h² = θ[1] / σ²_p
+    H² = sum(θ[1:5]) / σ²_p
+    h²_se = compute_heritability_se(θ, se_values, :narrow)
+    H²_se = compute_heritability_se(θ, se_values, :broad)
+    
+    # Log-likelihood
+    loglik = compute_reml_loglik(y, X, V_final)
+    
+    convergence = ConvergenceInfo(
+        true,
+        iter,
+        param_change,
+        norm(s),
+        param_change,
+        "AI-REML converged"
+    )
+    
+    prop_var = NamedTuple{param_names}(θ ./ σ²_p)
+    
+    return VarianceComponents(
+        estimates,
+        standard_errors,
+        h²,
+        H²,
+        h²_se,
+        H²_se,
+        loglik,
+        convergence,
+        prop_var
+    )
+end
+
+"""
+    em_estimation(y, X, grms, start_values, constraints)
+
+EM algorithm for variance component estimation.
+"""
+function em_estimation(y::AbstractVector{<:Real},
+                      X::AbstractMatrix{<:Real},
+                      grms::GRMSet,
+                      start_values::NamedTuple,
+                      constraints::Union{Dict, Nothing})
+    
+    n = length(y)
+    
+    # Initialize
+    σ²_a = start_values.σ²_a
+    σ²_d = start_values.σ²_d
+    σ²_aa = start_values.σ²_aa
+    σ²_ad = start_values.σ²_ad
+    σ²_dd = start_values.σ²_dd
+    σ²_e = start_values.σ²_e
+    
+    max_iter = 200
+    tol = 1e-6
+    
+    @showprogress "EM iterations" for iter in 1:max_iter
+        # Store old values
+        θ_old = [σ²_a, σ²_d, σ²_aa, σ²_ad, σ²_dd, σ²_e]
+        
+        # E-step: Compute expected values
+        V = σ²_a * grms.G + σ²_d * grms.D + 
+            σ²_aa * grms.G_AA + σ²_ad * grms.G_AD + 
+            σ²_dd * grms.G_DD + σ²_e * I
+        
+        V_inv = inv(V + RIDGE_LAMBDA * I)
+        
+        # Fixed effects
+        β = inv(X' * V_inv * X) * X' * V_inv * y
+        resid = y - X * β
+        
+        # Random effects BLUPs
+        u_a = σ²_a * grms.G * V_inv * resid
+        u_d = σ²_d * grms.D * V_inv * resid
+        u_aa = σ²_aa * grms.G_AA * V_inv * resid
+        u_ad = σ²_ad * grms.G_AD * V_inv * resid
+        u_dd = σ²_dd * grms.G_DD * V_inv * resid
+        
+        # M-step: Update variance components
+        G_inv = inv(grms.G + RIDGE_LAMBDA * I)
+        D_inv = inv(grms.D + RIDGE_LAMBDA * I)
+        G_AA_inv = inv(grms.G_AA + RIDGE_LAMBDA * I)
+        G_AD_inv = inv(grms.G_AD + RIDGE_LAMBDA * I)
+        G_DD_inv = inv(grms.G_DD + RIDGE_LAMBDA * I)
+        
+        # Update formulas
+        σ²_a = (dot(u_a, G_inv * u_a) + σ²_a * tr(I - σ²_a * G_inv * V_inv * grms.G)) / n
+        σ²_d = (dot(u_d, D_inv * u_d) + σ²_d * tr(I - σ²_d * D_inv * V_inv * grms.D)) / n
+        σ²_aa = (dot(u_aa, G_AA_inv * u_aa) + σ²_aa * tr(I - σ²_aa * G_AA_inv * V_inv * grms.G_AA)) / n
+        σ²_ad = (dot(u_ad, G_AD_inv * u_ad) + σ²_ad * tr(I - σ²_ad * G_AD_inv * V_inv * grms.G_AD)) / n
+        σ²_dd = (dot(u_dd, G_DD_inv * u_dd) + σ²_dd * tr(I - σ²_dd * G_DD_inv * V_inv * grms.G_DD)) / n
+        
+        e = resid - u_a - u_d - u_aa - u_ad - u_dd
+        σ²_e = (dot(e, e) + σ²_e * tr(I - σ²_e * V_inv)) / n
+        
+        # Apply constraints if needed
+        if !isnothing(constraints)
+            σ²_a = clamp(σ²_a, get(constraints, :σ²_a, (0.0, Inf))...)
+            σ²_d = clamp(σ²_d, get(constraints, :σ²_d, (0.0, Inf))...)
+            σ²_aa = clamp(σ²_aa, get(constraints, :σ²_aa, (0.0, Inf))...)
+            σ²_ad = clamp(σ²_ad, get(constraints, :σ²_ad, (0.0, Inf))...)
+            σ²_dd = clamp(σ²_dd, get(constraints, :σ²_dd, (0.0, Inf))...)
+            σ²_e = clamp(σ²_e, get(constraints, :σ²_e, (EPSILON, Inf))...)
+        else
+            # Ensure positive
+            σ²_a = max(σ²_a, 0.0)
+            σ²_d = max(σ²_d, 0.0)
+            σ²_aa = max(σ²_aa, 0.0)
+            σ²_ad = max(σ²_ad, 0.0)
+            σ²_dd = max(σ²_dd, 0.0)
+            σ²_e = max(σ²_e, EPSILON)
+        end
+        
+        # Check convergence
+        θ_new = [σ²_a, σ²_d, σ²_aa, σ²_ad, σ²_dd, σ²_e]
+        if maximum(abs.(θ_new - θ_old)) < tol
+            @info "EM converged" iteration=iter
+            break
+        end
+    end
+    
+    # Final results
+    param_names = [:σ²_a, :σ²_d, :σ²_aa, :σ²_ad, :σ²_dd, :σ²_e]
+    estimates = NamedTuple{param_names}([σ²_a, σ²_d, σ²_aa, σ²_ad, σ²_dd, σ²_e])
+    
+    # Approximate standard errors (simplified)
+    se_values = sqrt.([σ²_a, σ²_d, σ²_aa, σ²_ad, σ²_dd, σ²_e] .* 2 ./ n)
+    se_names = [Symbol("se_" * String(name)[4:end]) for name in param_names]
+    standard_errors = NamedTuple{se_names}(se_values)
+    
+    # Heritabilities
+    σ²_p = σ²_a + σ²_d + σ²_aa + σ²_ad + σ²_dd + σ²_e
+    h² = σ²_a / σ²_p
+    H² = (σ²_a + σ²_d + σ²_aa + σ²_ad + σ²_dd) / σ²_p
+    
+    return VarianceComponents(
+        estimates,
+        standard_errors,
+        h²,
+        H²,
+        0.05,  # Approximate SE
+        0.05,  # Approximate SE
+        0.0,   # Log-likelihood not computed
+        ConvergenceInfo(true, iter, tol, 0.0, 0.0, "EM converged"),
+        NamedTuple{param_names}([σ²_a, σ²_d, σ²_aa, σ²_ad, σ²_dd, σ²_e] ./ σ²_p)
+    )
+end
+
+"""
+    estimate_heritability(trait_variance::Real, genetic_variance::Real; 
+                         se_trait::Real=0.0, se_genetic::Real=0.0)
+
+Estimate heritability with standard error using delta method.
+"""
+function estimate_heritability(trait_variance::Real, genetic_variance::Real; 
+                              se_trait::Real=0.0, se_genetic::Real=0.0)
+    
+    h² = genetic_variance / trait_variance
+    
+    if se_trait > 0 && se_genetic > 0
+        # Delta method for ratio
+        h²_se = h² * sqrt((se_genetic/genetic_variance)^2 + 
+                         (se_trait/trait_variance)^2)
+    else
+        h²_se = 0.0
+    end
+    
+    return h², h²_se
+end
+
+# Helper functions
+
+function compute_standard_errors(θ::Vector{<:Real}, objective_fn::Function)
+    # Compute Hessian using ForwardDiff
+    H = ForwardDiff.hessian(objective_fn, θ)
+    
+    # Information matrix is negative Hessian
+    I = -H
+    
+    # Standard errors from diagonal of inverse information matrix
+    try
+        I_inv = inv(I)
+        se = sqrt.(diag(I_inv))
+        return se
+    catch
+        @warn "Information matrix singular, returning approximate SEs"
+        return 0.1 * abs.(θ)  # 10% of estimates
+    end
+end
+
+function compute_heritability_se(θ::Vector{<:Real}, se_θ::Vector{<:Real}, type::Symbol)
+    # Delta method for heritability
+    σ²_p = sum(θ)
+    
+    if type == :narrow
+        # h² = σ²_a / σ²_p
+        h² = θ[1] / σ²_p
+        
+        # Gradient
+        g = zeros(length(θ))
+        g[1] = 1 / σ²_p - θ[1] / σ²_p^2
+        for i in 2:length(θ)
+            g[i] = -θ[1] / σ²_p^2
+        end
+        
+        # Variance of h²
+        var_h² = dot(g, Diagonal(se_θ.^2) * g)
+        return sqrt(var_h²)
+        
+    elseif type == :broad
+        # H² = (σ²_a + σ²_d + σ²_aa + σ²_ad + σ²_dd) / σ²_p
+        σ²_g = sum(θ[1:5])
+        H² = σ²_g / σ²_p
+        
+        # Gradient
+        g = zeros(length(θ))
+        for i in 1:5
+            g[i] = 1 / σ²_p - σ²_g / σ²_p^2
+        end
+        g[6] = -σ²_g / σ²_p^2
+        
+        # Variance of H²
+        var_H² = dot(g, Diagonal(se_θ.^2) * g)
+        return sqrt(var_H²)
+    end
+end
+
+function compute_reml_loglik(y::AbstractVector{<:Real},
+                            X::AbstractMatrix{<:Real},
+                            V::AbstractMatrix{<:Real})
+    
+    n = length(y)
+    p = size(X, 2)
+    
+    L = cholesky(Symmetric(V + RIDGE_LAMBDA * I))
+    V_inv_X = L \ X
+    XtVinvX = X' * V_inv_X
+    
+    logdet_V = 2 * sum(log.(diag(L.L)))
+    logdet_XtVinvX = logdet(XtVinvX)
+    
+    V_inv_y = L \ y
+    β = XtVinvX \ (X' * V_inv_y)
+    resid = y - X * β
+    
+    quadratic = dot(resid, L \ resid)
+    
+    loglik = -0.5 * ((n - p) * log(2π) + logdet_V + logdet_XtVinvX + quadratic)
+    
+    return loglik
+end
+
+end # module VarianceComponentEstimation
+```
+
+Let me continue with the QC module:
+
+### src/genomics/qc.jl
+
+```julia
+# Quality control module for genomic data
+
+module QualityControl
+
+using Statistics
+using StatsBase
+using DataFrames
+using Distributions
+using ProgressMeter
+using ..Constants
+
+export quality_control, qc_genotypes, qc_phenotypes, qc_markers, qc_samples,
+       filter_maf, filter_call_rate, filter_hwe, remove_duplicates,
+       identify_outliers, population_stratification_check
+
+"""
+    quality_control(geno_data::GenotypeData, pheno_data::DataFrame;
+                   maf_threshold::Float64=DEFAULT_MAF_FILTER,
+                   call_rate_threshold::Float64=DEFAULT_CALL_RATE,
+                   hwe_pvalue::Float64=DEFAULT_HWE_PVALUE,
+                   remove_related::Bool=true,
+                   relatedness_threshold::Float64=0.95)
+
+Comprehensive quality control pipeline for genomic data.
+"""
+function quality_control(geno_data::GenotypeData, pheno_data::DataFrame;
+                        maf_threshold::Float64=DEFAULT_MAF_FILTER,
+                        call_rate_threshold::Float64=DEFAULT_CALL_RATE,
+                        hwe_pvalue::Float64=DEFAULT_HWE_PVALUE,
+                        remove_related::Bool=true,
+                        relatedness_threshold::Float64=0.95)
+    
+    @info "Starting quality control pipeline"
+    
+    # Initial statistics
+    n_samples_init = geno_data.n_individuals
+    n_markers_init = geno_data.n_markers
+    
+    # Sample QC
+    @info "Performing sample quality control"
+    sample_qc_results = qc_samples(geno_data, pheno_data)
+    samples_to_keep = sample_qc_results.pass_qc
+    
+    # Filter samples
+    if sum(.!samples_to_keep) > 0
+        geno_data = filter_samples(geno_data, samples_to_keep)
+        pheno_data = pheno_data[samples_to_keep, :]
+        @info "Removed $(sum(.!samples_to_keep)) samples"
+    end
+    
+    # Marker QC
+    @info "Performing marker quality control"
+    marker_qc_results = qc_markers(geno_data;
+                                  maf_threshold=maf_threshold,
+                                  call_rate_threshold=call_rate_threshold,
+                                  hwe_pvalue=hwe_pvalue)
+    markers_to_keep = marker_qc_results.pass_qc
+    
+    # Filter markers
+    if sum(.!markers_to_keep) > 0
+        geno_data = filter_markers(geno_data, markers_to_keep)
+        @info "Removed $(sum(.!markers_to_keep)) markers"
+    end
+    
+    # Remove duplicate markers
+    @info "Checking for duplicate markers"
+    unique_markers = identify_unique_markers(geno_data)
+    if length(unique_markers) < geno_data.n_markers
+        geno_data = filter_markers(geno_data, unique_markers)
+        @info "Removed $(geno_data.n_markers - length(unique_markers)) duplicate markers"
+    end
+    
+    # Remove highly related individuals
+    if remove_related && geno_data.n_individuals > 100
+        @info "Checking for related individuals"
+        unrelated = identify_unrelated_samples(geno_data, relatedness_threshold)
+        if length(unrelated) < geno_data.n_individuals
+            geno_data = filter_samples(geno_data, unrelated)
+            pheno_data = pheno_data[unrelated, :]
+            @info "Removed $(geno_data.n_individuals - length(unrelated)) related individuals"
+        end
+    end
+    
+    # Population stratification check
+    @info "Checking population stratification"
+    pop_structure = population_stratification_check(geno_data)
+    
+    # Final summary
+    @info "Quality control complete" samples_removed=n_samples_init-geno_data.n_individuals markers_removed=n_markers_init-geno_data.n_markers
+    
+    qc_summary = Dict(
+        :initial_samples => n_samples_init,
+        :initial_markers => n_markers_init,
+        :final_samples => geno_data.n_individuals,
+        :final_markers => geno_data.n_markers,
+        :sample_qc => sample_qc_results,
+        :marker_qc => marker_qc_results,
+        :population_structure => pop_structure
+    )
+    
+    return geno_data, pheno_data, qc_summary
+end
+
+"""
+    qc_samples(geno_data::GenotypeData, pheno_data::DataFrame;
+              missing_threshold::Float64=0.05,
+              heterozygosity_threshold::Float64=3.0)
+
+Quality control for samples.
+"""
+function qc_samples(geno_data::GenotypeData, pheno_data::DataFrame;
+                   missing_threshold::Float64=0.05,
+                   heterozygosity_threshold::Float64=3.0)
+    
+    n = geno_data.n_individuals
+    pass_qc = trues(n)
+    
+    # Calculate per-sample statistics
+    missing_rate = zeros(n)
+    heterozygosity = zeros(n)
+    
+    @showprogress "Computing sample statistics" for i in 1:n
+        sample_genos = geno_data.genotypes[i, :]
+        
+        # Missing rate
+        missing_rate[i] = sum(sample_genos .< 0) / geno_data.n_markers
+        
+        # Heterozygosity
+        valid_genos = sample_genos[sample_genos .>= 0]
+        if !isempty(valid_genos)
+            heterozygosity[i] = sum(valid_genos .== 1) / length(valid_genos)
+        end
+    end
+    
+    # Apply filters
+    # 1. Missing rate filter
+    high_missing = missing_rate .> missing_threshold
+    pass_qc[high_missing] .= false
+    
+    # 2. Heterozygosity outliers (too high or too low)
+    het_mean = mean(heterozygosity)
+    het_std = std(heterozygosity)
+    het_z_scores = abs.((heterozygosity .- het_mean) ./ het_std)
+    het_outliers = het_z_scores .> heterozygosity_threshold
+    pass_qc[het_outliers] .= false
+    
+    # 3. Missing phenotypes
+    if !isempty(pheno_data)
+        pheno_missing = [any(ismissing.(row)) for row in eachrow(pheno_data)]
+        pass_qc[pheno_missing] .= false
+    end
+    
+    # 4. Sex check (if sex information available)
+    sex_mismatch = falses(n)
+    if hasproperty(geno_data.sample_info, :sex)
+        sex_mismatch = check_sex_consistency(geno_data)
+        pass_qc[sex_mismatch] .= false
+    end
+    
+    results = (
+        pass_qc = pass_qc,
+        n_pass = sum(pass_qc),
+        n_fail = sum(.!pass_qc),
+        missing_rate = missing_rate,
+        heterozygosity = heterozygosity,
+        high_missing = high_missing,
+        het_outliers = het_outliers,
+        sex_mismatch = sex_mismatch
+    )
+    
+    return results
+end
+
+"""
+    qc_markers(geno_data::GenotypeData;
+              maf_threshold::Float64=DEFAULT_MAF_FILTER,
+              call_rate_threshold::Float64=DEFAULT_CALL_RATE,
+              hwe_pvalue::Float64=DEFAULT_HWE_PVALUE)
+
+Quality control for markers.
+"""
+function qc_markers(geno_data::GenotypeData;
+                   maf_threshold::Float64=DEFAULT_MAF_FILTER,
+                   call_rate_threshold::Float64=DEFAULT_CALL_RATE,
+                   hwe_pvalue::Float64=DEFAULT_HWE_PVALUE)
+    
+    m = geno_data.n_markers
+    pass_qc = trues(m)
+    
+    # Calculate per-marker statistics
+    maf = zeros(m)
+    call_rate = zeros(m)
+    hwe_p = ones(m)
+    
+    @showprogress "Computing marker statistics" for j in 1:m
+        marker_genos = geno_data.genotypes[:, j]
+        valid_genos = marker_genos[marker_genos .>= 0]
+        
+        if isempty(valid_genos)
+            pass_qc[j] = false
+            continue
+        end
+        
+        # Call rate
+        call_rate[j] = length(valid_genos) / geno_data.n_individuals
+        
+        # Allele frequency and MAF
+        p = sum(valid_genos) / (2 * length(valid_genos))
+        maf[j] = min(p, 1 - p)
+        
+        # Hardy-Weinberg equilibrium test
+        if maf[j] > 0 && call_rate[j] > 0.95
+            hwe_p[j] = hardy_weinberg_test(valid_genos, p)
+        end
+    end
+    
+    # Apply filters
+    # 1. MAF filter
+    low_maf = maf .< maf_threshold
+    pass_qc[low_maf] .= false
+    
+    # 2. Call rate filter
+    low_call_rate = call_rate .< call_rate_threshold
+    pass_qc[low_call_rate] .= false
+    
+    # 3. HWE filter
+    hwe_fail = hwe_p .< hwe_pvalue
+    pass_qc[hwe_fail] .= false
+    
+    # 4. Monomorphic markers
+    monomorphic = maf .== 0
+    pass_qc[monomorphic] .= false
+    
+    results = (
+        pass_qc = pass_qc,
+        n_pass = sum(pass_qc),
+        n_fail = sum(.!pass_qc),
+        maf = maf,
+        call_rate = call_rate,
+        hwe_p = hwe_p,
+        low_maf = low_maf,
+        low_call_rate = low_call_rate,
+        hwe_fail = hwe_fail,
+        monomorphic = monomorphic
+    )
+    
+    return results
+end
+
+"""
+    hardy_weinberg_test(genotypes::Vector{Int}, p::Float64)
+
+Perform Hardy-Weinberg equilibrium test.
+"""
+function hardy_weinberg_test(genotypes::Vector{Int}, p::Float64)
+    n = length(genotypes)
+    
+    # Observed counts
+    n_AA = sum(genotypes .== 0)
+    n_Aa = sum(genotypes .== 1)
+    n_aa = sum(genotypes .== 2)
+    
+    # Expected counts under HWE
+    e_AA = n * (1 - p)^2
+    e_Aa = n * 2 * p * (1 - p)
+    e_aa = n * p^2
+    
+    # Chi-square test
+    χ² = (n_AA - e_AA)^2 / e_AA + 
+         (n_Aa - e_Aa)^2 / e_Aa + 
+         (n_aa - e_aa)^2 / e_aa
+    
+    # P-value (1 degree of freedom)
+    pval = 1 - cdf(Chisq(1), χ²)
+    
+    return pval
+end
+
+"""
+    identify_outliers(data::AbstractVector{<:Real};
+                     method::Symbol=:iqr,
+                     threshold::Real=3.0)
+
+Identify outliers in data using specified method.
+"""
+function identify_outliers(data::AbstractVector{<:Real};
+                          method::Symbol=:iqr,
+                          threshold::Real=3.0)
+    
+    outliers = falses(length(data))
+    
+    if method == :iqr
+        # Interquartile range method
+        q1 = quantile(data, 0.25)
+        q3 = quantile(data, 0.75)
+        iqr = q3 - q1
+        lower = q1 - threshold * iqr
+        upper = q3 + threshold * iqr
+        outliers = (data .< lower) .| (data .> upper)
+        
+    elseif method == :zscore
+        # Z-score method
+        μ = mean(data)
+        σ = std(data)
+        z_scores = abs.((data .- μ) ./ σ)
+        outliers = z_scores .> threshold
+        
+    elseif method == :mad
+        # Median absolute deviation
+        med = median(data)
+        mad = median(abs.(data .- med))
+        mad_scores = abs.((data .- med) ./ (1.4826 * mad))
+        outliers = mad_scores .> threshold
+    end
+    
+    return outliers
+end
+
+"""
+    identify_unique_markers(geno_data::GenotypeData;
+                           correlation_threshold::Float64=0.999)
+
+Identify unique markers by removing duplicates.
+"""
+function identify_unique_markers(geno_data::GenotypeData;
+                               correlation_threshold::Float64=0.999)
+    
+    m = geno_data.n_markers
+    keep = trues(m)
+    
+    # For large datasets, use sampling
+    if m > 10000
+        # Sample-based duplicate detection
+        sample_size = min(100, geno_data.n_individuals)
+        sample_idx = sample(1:geno_data.n_individuals, sample_size, replace=false)
+        
+        for j1 in 1:(m-1)
+            if !keep[j1]
+                continue
+            end
+            
+            g1 = geno_data.genotypes[sample_idx, j1]
+            
+            for j2 in (j1+1):m
+                if !keep[j2]
+                    continue
+                end
+                
+                g2 = geno_data.genotypes[sample_idx, j2]
+                
+                # Check if identical
+                if all(g1 .== g2)
+                    keep[j2] = false
+                end
+            end
+        end
+    else
+        # Full correlation check for smaller datasets
+        for j1 in 1:(m-1)
+            if !keep[j1]
+                continue
+            end
+            
+            for j2 in (j1+1):m
+                if !keep[j2]
+                    continue
+                end
+                
+                # Compute correlation
+                r = cor(Float64.(geno_data.genotypes[:, j1]), 
+                       Float64.(geno_data.genotypes[:, j2]))
+                
+                if abs(r) > correlation_threshold
+                    keep[j2] = false
+                end
+            end
+        end
+    end
+    
+    return findall(keep)
+end
+
+"""
+    identify_unrelated_samples(geno_data::GenotypeData,
+                              threshold::Float64=0.95)
+
+Identify unrelated samples based on genomic relationships.
+"""
+function identify_unrelated_samples(geno_data::GenotypeData,
+                                   threshold::Float64=0.95)
+    
+    # Compute simple GRM
+    @info "Computing relationships"
+    X = geno_data.genotypes .- 2 * geno_data.allele_freq'
+    scale = sum(2 * geno_data.allele_freq .* (1 .- geno_data.allele_freq))
+    G = (X * X') / scale
+    
+    n = geno_data.n_individuals
+    keep = trues(n)
+    
+    # Greedy algorithm to remove related individuals
+    # Keep individual with fewer relationships
+    relationship_counts = zeros(Int, n)
+    
+    for i in 1:(n-1)
+        for j in (i+1):n
+            if G[i, j] > threshold
+                relationship_counts[i] += 1
+                relationship_counts[j] += 1
+            end
+        end
+    end
+    
+    # Remove individuals in order of most relationships
+    while any(relationship_counts .> 0)
+        # Find individual with most relationships
+        idx = argmax(relationship_counts)
+        keep[idx] = false
+        
+        # Update relationship counts
+        for i in 1:n
+            if i != idx && G[i, idx] > threshold
+                relationship_counts[i] -= 1
+            end
+        end
+        relationship_counts[idx] = 0
+    end
+    
+    return findall(keep)
+end
+
+"""
+    population_stratification_check(geno_data::GenotypeData;
+                                   n_components::Int=10)
+
+Check for population stratification using PCA.
+"""
+function population_stratification_check(geno_data::GenotypeData;
+                                       n_components::Int=10)
+    
+    # Standardize genotypes
+    X = Float64.(geno_data.genotypes)
+    for j in 1:geno_data.n_markers
+        col = view(X, :, j)
+        μ = mean(col[col .>= 0])
+        σ = std(col[col .>= 0])
+        col[col .>= 0] .= (col[col .>= 0] .- μ) ./ σ
+        col[col .< 0] .= 0  # Missing as mean
+    end
+    
+    # PCA via SVD
+    U, S, V = svd(X)
+    
+    # Extract principal components
+    n_comp = min(n_components, length(S))
+    pcs = U[:, 1:n_comp] * Diagonal(S[1:n_comp])
+    
+    # Variance explained
+    var_explained = S[1:n_comp].^2 / sum(S.^2)
+    
+    # Test for population structure
+    # Tracy-Widom test on eigenvalues
+    tw_pvalues = tracy_widom_test(S[1:n_comp].^2, geno_data.n_individuals, geno_data.n_markers)
+    
+    # Detect outliers in PC space
+    outliers = falses(geno_data.n_individuals)
+    for pc in 1:min(3, n_comp)
+        outliers .|= identify_outliers(pcs[:, pc], method=:zscore, threshold=4.0)
+    end
+    
+    results = Dict(
+        :pcs => pcs,
+        :variance_explained => var_explained,
+        :eigenvalues => S[1:n_comp].^2,
+        :tracy_widom_pvalues => tw_pvalues,
+        :n_significant_pcs => sum(tw_pvalues .< 0.05),
+        :outliers => outliers,
+        :n_outliers => sum(outliers)
+    )
+    
+    return results
+end
+
+"""
+    check_sex_consistency(geno_data::GenotypeData)
+
+Check sex consistency using X chromosome heterozygosity.
+"""
+function check_sex_consistency(geno_data::GenotypeData)
+    n = geno_data.n_individuals
+    inconsistent = falses(n)
+    
+    # Find X chromosome markers
+    if hasproperty(geno_data.marker_info, :CHR)
+        x_markers = findall(geno_data.marker_info.CHR .== "X")
+        
+        if !isempty(x_markers)
+            # Calculate X heterozygosity
+            x_het = zeros(n)
+            for i in 1:n
+                x_genos = geno_data.genotypes[i, x_markers]
+                valid = x_genos .>= 0
+                if any(valid)
+                    x_het[i] = sum(x_genos[valid] .== 1) / sum(valid)
+                end
+            end
+            
+            # Compare with reported sex
+            for i in 1:n
+                reported_sex = geno_data.sample_info.sex[i]
+                if reported_sex == "M" && x_het[i] > 0.1
+                    inconsistent[i] = true
+                elseif reported_sex == "F" && x_het[i] < 0.1
+                    inconsistent[i] = true
+                end
+            end
+        end
+    end
+    
+    return inconsistent
+end
+
+"""
+    tracy_widom_test(eigenvalues::Vector{<:Real}, n::Int, p::Int)
+
+Tracy-Widom test for significance of principal components.
+"""
+function tracy_widom_test(eigenvalues::Vector{<:Real}, n::Int, p::Int)
+    # Simplified Tracy-Widom test
+    # In practice, would use exact TW distribution
+    
+    l = length(eigenvalues)
+    pvalues = ones(l)
+    
+    # Marchenko-Pastur bounds
+    γ = n / p
+    λ_max = (1 + sqrt(1/γ))^2
+    
+    # Normalized eigenvalues
+    normalized = eigenvalues / eigenvalues[1]
+    
+    for i in 1:l
+        if normalized[i] > λ_max
+            # Approximate p-value
+            pvalues[i] = exp(-normalized[i])
+        end
+    end
+    
+    return pvalues
+end
+
+# Helper functions for filtering
+
+function filter_samples(geno_data::GenotypeData, keep::BitVector)
+    @assert length(keep) == geno_data.n_individuals
+    
+    new_genotypes = geno_data.genotypes[keep, :]
+    new_sample_info = geno_data.sample_info[keep, :]
+    
+    return GenotypeData(
+        new_genotypes,
+        geno_data.allele_freq,
+        geno_data.maf_filter,
+        geno_data.call_rate,
+        sum(keep),
+        geno_data.n_markers,
+        geno_data.marker_info,
+        new_sample_info,
+        geno_data.ploidy
+    )
+end
+
+function filter_markers(geno_data::GenotypeData, keep::Union{BitVector, Vector{Int}})
+    if isa(keep, BitVector)
+        keep_idx = findall(keep)
+    else
+        keep_idx = keep
+    end
+    
+    new_genotypes = geno_data.genotypes[:, keep_idx]
+    new_allele_freq = geno_data.allele_freq[keep_idx]
+    new_call_rate = geno_data.call_rate[keep_idx]
+    new_marker_info = geno_data.marker_info[keep_idx, :]
+    
+    return GenotypeData(
+        new_genotypes,
+        new_allele_freq,
+        geno_data.maf_filter,
+        new_call_rate,
+        geno_data.n_individuals,
+        length(keep_idx),
+        new_marker_info,
+        geno_data.sample_info,
+        geno_data.ploidy
+    )
+end
+
+end # module QualityControl
+```
+
+Now let me continue with the main model implementation - OGBLUP:
+
+### src/models/ogblup.jl
+
+```julia
+# Orthogonal GBLUP model implementation
+
+module OGBLUPModel
+
+using LinearAlgebra
+using Statistics
+using ProgressMeter
+using BlockDiagonals
+using IterativeSolvers
+using Preconditioners
+using ..Constants
+using ..GRMConstruction
+using ..VarianceComponentEstimation
+using ..Validation
+
+export fit_ogblup, predict_gebv, predict_phenotype, 
+       compute_breeding_values, compute_prediction_accuracy,
+       OGBLUPOptions, MultiTraitOGBLUP
+
+"""
+    OGBLUPOptions
+
+Options for OGBLUP model fitting.
+"""
+@kwdef struct OGBLUPOptions
+    include_dominance::Bool = true
+    include_epistasis::Bool = true
+    include_gxe::Bool = false
+    variance_method::VarianceComponentMethod = AIREMLMethod()
+    solver::Symbol = :direct  # :direct, :iterative, :pcg
+    max_iterations::Int = 100
+    tolerance::Float64 = CONVERGENCE_TOL
+    use_eigendecomp::Bool = false
+    compute_reliability::Bool = true
+    verbose::Bool = true
+end
+
+"""
+    fit_ogblup(population::Population; options::OGBLUPOptions=OGBLUPOptions())
+
+Fit Orthogonal GBLUP model with all genetic effects.
+"""
+function fit_ogblup(population::Population; 
+                   options::OGBLUPOptions=OGBLUPOptions(),
+                   fixed_effects::Union{AbstractMatrix{<:Real}, Nothing}=nothing)
+    
+    options.verbose && @info "Fitting Orthogonal GBLUP model"
+    
+    # Validate inputs
+    validate_model_inputs(population=population, fixed_effects=fixed_effects)
+    
+    # Build GRM set if not already computed
+    grms = if haskey(population.metadata, :grms)
+        population.metadata[:grms]
+    else
+        compute_grm_set(population.genotype_data;
+                       include_dominance=options.include_dominance,
+                       include_epistasis=options.include_epistasis)
+    end
+    
+    # Set up design matrices
+    n = population.genotype_data.n_individuals
+    p = size(population.phenotypes, 2)  # Number of traits
+    
+    X = isnothing(fixed_effects) ? ones(n, 1) : fixed_effects
+    
+    # Fit model for each trait or multi-trait
+    if p == 1
+        # Single trait
+        y = vec(population.phenotypes)
+        model = fit_single_trait_ogblup(y, X, grms, options)
+    else
+        # Multi-trait
+        model = fit_multi_trait_ogblup(population.phenotypes, X, grms, options)
+    end
+    
+    # Add metadata
+    model_info = ModelInfo(
+        traits = ["Trait$i" for i in 1:p],
+        n_observations = n,
+        n_fixed_effects = size(X, 2),
+        n_random_effects = Dict(
+            :additive => n,
+            :dominance => options.include_dominance ? n : 0,
+            :epistasis_aa => options.include_epistasis ? n : 0,
+            :epistasis_ad => options.include_epistasis ? n : 0,
+            :epistasis_dd => options.include_epistasis ? n : 0
+        ),
+        fit_date = now(),
+        julia_version = VERSION,
+        package_version = PACKAGE_VERSION,
+        computation_time = 0.0,  # Would be set by timing
+        options = Dict(pairs(options))
+    )
+    
+    return OGBLUP(grms, model.var_comp, X, model.fixed_coef, 
+                  model.random_effects, model.fitted_values, 
+                  model.residuals, model_info)
+end
+
+"""
+    fit_single_trait_ogblup(y, X, grms, options)
+
+Fit single-trait OGBLUP model.
+"""
+function fit_single_trait_ogblup(y::AbstractVector{<:Real},
+                                X::AbstractMatrix{<:Real},
+                                grms::GRMSet,
+                                options::OGBLUPOptions)
+    
+    n = length(y)
+    
+    # Estimate variance components
+    options.verbose && @info "Estimating variance components"
+    var_comp = estimate_variance_components(y, grms;
+                                          method=options.variance_method,
+                                          fixed_effects=X)
+    
+    # Build coefficient matrix
+    V = build_v_matrix(grms, var_comp.estimates)
+    
+    # Solve mixed model equations
+    options.verbose && @info "Solving mixed model equations"
+    solution = solve_mme(y, X, V, grms, var_comp.estimates, options)
+    
+    # Extract components
+    fixed_coef = solution.β
+    random_effects = solution.u
+    
+    # Compute fitted values and residuals
+    fitted_values = X * fixed_coef + sum(values(random_effects))
+    residuals = y - fitted_values
+    
+    # Compute reliabilities if requested
+    if options.compute_reliability
+        reliabilities = compute_reliabilities(V, grms, var_comp.estimates)
+        for (effect, rel) in reliabilities
+            random_effects[Symbol(effect, "_reliability")] = rel
+        end
+    end
+    
+    return (
+        var_comp = var_comp,
+        fixed_coef = fixed_coef,
+        random_effects = random_effects,
+        fitted_values = fitted_values,
+        residuals = residuals
+    )
+end
+
+"""
+    fit_multi_trait_ogblup(Y, X, grms, options)
+
+Fit multi-trait OGBLUP model.
+"""
+function fit_multi_trait_ogblup(Y::AbstractMatrix{<:Real},
+                               X::AbstractMatrix{<:Real},
+                               grms::GRMSet,
+                               options::OGBLUPOptions)
+    
+    n, p = size(Y)
+    
+    # For now, fit traits independently
+    # Full multi-trait would require more complex implementation
+    
+    var_comps = Vector{VarianceComponents}(undef, p)
+    fixed_coefs = Matrix{Float64}(undef, size(X, 2), p)
+    random_effects = Dict{Symbol, Matrix{Float64}}()
+    fitted_values = similar(Y)
+    residuals = similar(Y)
+    
+    # Initialize random effects storage
+    for effect in [:additive, :dominance, :epistasis_aa, :epistasis_ad, :epistasis_dd]
+        random_effects[effect] = zeros(n, p)
+    end
+    
+    # Fit each trait
+    for trait in 1:p
+        options.verbose && @info "Fitting trait $trait of $p"
+        
+        y = Y[:, trait]
+        result = fit_single_trait_ogblup(y, X, grms, options)
+        
+        var_comps[trait] = result.var_comp
+        fixed_coefs[:, trait] = result.fixed_coef
+        fitted_values[:, trait] = result.fitted_values
+        residuals[:, trait] = result.residuals
+        
+        # Store random effects
+        for (effect, values) in result.random_effects
+            if haskey(random_effects, effect)
+                random_effects[effect][:, trait] = values
+            end
+        end
+    end
+    
+    # Combine variance components (simplified)
+    avg_var_comp = average_variance_components(var_comps)
+    
+    return (
+        var_comp = avg_var_comp,
+        fixed_coef = fixed_coefs,
+        random_effects = random_effects,
+        fitted_values = fitted_values,
+        residuals = residuals
+    )
+end
+
+"""
+    solve_mme(y, X, V, grms, var_comp, options)
+
+Solve mixed model equations.
+"""
+function solve_mme(y::AbstractVector{<:Real},
+                  X::AbstractMatrix{<:Real},
+                  V::AbstractMatrix{<:Real},
+                  grms::GRMSet,
+                  var_comp::NamedTuple,
+                  options::OGBLUPOptions)
+    
+    n = length(y)
+    p = size(X, 2)
+    
+    if options.solver == :direct
+        # Direct solution
+        solution = solve_mme_direct(y, X, V, grms, var_comp)
+    elseif options.solver == :iterative
+        # Iterative solution (for large systems)
+        solution = solve_mme_iterative(y, X, V, grms, var_comp, options)
+    elseif options.solver == :pcg
+        # Preconditioned conjugate gradient
+        solution = solve_mme_pcg(y, X, V, grms, var_comp, options)
+    else
+        error("Unknown solver: $(options.solver)")
+    end
+    
+    return solution
+end
+
+"""
+    solve_mme_direct(y, X, V, grms, var_comp)
+
+Direct solution of mixed model equations.
+"""
+function solve_mme_direct(y::AbstractVector{<:Real},
+                         X::AbstractMatrix{<:Real},
+                         V::AbstractMatrix{<:Real},
+                         grms::GRMSet,
+                         var_comp::NamedTuple)
+    
+    n = length(y)
+    p = size(X, 2)
+    
+    # Compute V^{-1} via Cholesky
+    L = cholesky(Symmetric(V))
+    V_inv = inv(L)
+    
+    # Fixed effects
+    XtVinvX = X' * V_inv * X
+    XtVinv_y = X' * V_inv * y
+    β = XtVinvX \ XtVinv_y
+    
+    # Random effects (BLUPs)
+    resid = y - X * β
+    V_inv_resid = V_inv * resid
+    
+    u = Dict{Symbol, Vector{Float64}}()
+    
+    # Additive effects
+    u[:additive] = var_comp.σ²_a * grms.G * V_inv_resid
+    
+    # Dominance effects
+    if var_comp.σ²_d > 0
+        u[:dominance] = var_comp.σ²_d * grms.D * V_inv_resid
+    else
+        u[:dominance] = zeros(n)
+    end
+    
+    # Epistatic effects
+    if var_comp.σ²_aa > 0
+        u[:epistasis_aa] = var_comp.σ²_aa * grms.G_AA * V_inv_resid
+    else
+        u[:epistasis_aa] = zeros(n)
+    end
+    
+    if var_comp.σ²_ad > 0
+        u[:epistasis_ad] = var_comp.σ²_ad * grms.G_AD * V_inv_resid
+    else
+        u[:epistasis_ad] = zeros(n)
+    end
+    
+    if var_comp.σ²_dd > 0
+        u[:epistasis_dd] = var_comp.σ²_dd * grms.G_DD * V_inv_resid
+    else
+        u[:epistasis_dd] = zeros(n)
+    end
+    
+    return (β = β, u = u)
+end
+
+"""
+    solve_mme_iterative(y, X, V, grms, var_comp, options)
+
+Iterative solution for large systems.
+"""
+function solve_mme_iterative(y::AbstractVector{<:Real},
+                            X::AbstractMatrix{<:Real},
+                            V::AbstractMatrix{<:Real},
+                            grms::GRMSet,
+                            var_comp::NamedTuple,
+                            options::OGBLUPOptions)
+    
+    n = length(y)
+    p = size(X, 2)
+    
+    # Initialize
+    β = zeros(p)
+    u = Dict(
+        :additive => zeros(n),
+        :dominance => zeros(n),
+        :epistasis_aa => zeros(n),
+        :epistasis_ad => zeros(n),
+        :epistasis_dd => zeros(n)
+    )
+    
+    # Gauss-Seidel iterations
+    for iter in 1:options.max_iterations
+        β_old = copy(β)
+        u_old = deepcopy(u)
+        
+        # Update fixed effects
+        resid = y - sum(values(u))
+        β = (X' * X) \ (X' * resid)
+        
+        # Update random effects
+        resid = y - X * β
+        
+        # Update each component
+        for (effect, grm, variance) in [
+            (:additive, grms.G, var_comp.σ²_a),
+            (:dominance, grms.D, var_comp.σ²_d),
+            (:epistasis_aa, grms.G_AA, var_comp.σ²_aa),
+            (:epistasis_ad, grms.G_AD, var_comp.σ²_ad),
+            (:epistasis_dd, grms.G_DD, var_comp.σ²_dd)
+        ]
+            if variance > 0
+                λ = var_comp.σ²_e / variance
+                partial_resid = resid - sum(u[k] for k in keys(u) if k != effect)
+                u[effect] = (grm + λ * I) \ partial_resid
+            end
+        end
+        
+        # Check convergence
+        β_change = norm(β - β_old)
+        u_change = maximum(norm(u[k] - u_old[k]) for k in keys(u))
+        
+        if β_change < options.tolerance && u_change < options.tolerance
+            @info "Iterative solver converged" iteration=iter
+            break
+        end
+    end
+    
+    return (β = β, u = u)
+end
+
+"""
+    solve_mme_pcg(y, X, V, grms, var_comp, options)
+
+Preconditioned conjugate gradient solution.
+"""
+function solve_mme_pcg(y::AbstractVector{<:Real},
+                      X::AbstractMatrix{<:Real},
+                      V::AbstractMatrix{<:Real},
+                      grms::GRMSet,
+                      var_comp::NamedTuple,
+                      options::OGBLUPOptions)
+    
+    n = length(y)
+    p = size(X, 2)
+    
+    # Build block system
+    # [X'X   X'Z ] [β] = [X'y]
+    # [Z'X   Z'Z+Λ] [u]   [Z'y]
+    
+    # For simplicity, solve for total genetic effect first
+    Z = I(n)  # Identity for random effects
+    G_total = var_comp.σ²_a * grms.G + 
+              var_comp.σ²_d * grms.D +
+              var_comp.σ²_aa * grms.G_AA +
+              var_comp.σ²_ad * grms.G_AD +
+              var_comp.σ²_dd * grms.G_DD
+    
+    # System matrix
+    A = [X'*X    X'*Z;
+         Z'*X    Z'*Z + inv(G_total)]
+    
+    # Right-hand side
+    b = [X'*y; Z'*y]
+    
+    # Preconditioner (block diagonal)
+    P = BlockDiagonal([inv(X'*X), inv(Z'*Z + inv(G_total))])
+    
+    # Solve using PCG
+    x, hist = cg(A, b, Pl=P, tol=options.tolerance, maxiter=options.max_iterations)
+    
+    # Extract solutions
+    β = x[1:p]
+    u_total = x[(p+1):end]
+    
+    # Decompose total genetic effect proportionally
+    total_genetic_var = sum([var_comp.σ²_a, var_comp.σ²_d, 
+                            var_comp.σ²_aa, var_comp.σ²_ad, var_comp.σ²_dd])
+    
+    u = Dict(
+        :additive => (var_comp.σ²_a / total_genetic_var) * u_total,
+        :dominance => (var_comp.σ²_d / total_genetic_var) * u_total,
+        :epistasis_aa => (var_comp.σ²_aa / total_genetic_var) * u_total,
+        :epistasis_ad => (var_comp.σ²_ad / total_genetic_var) * u_total,
+        :epistasis_dd => (var_comp.σ²_dd / total_genetic_var) * u_total
+    )
+    
+    return (β = β, u = u)
+end
+
+"""
+    predict_gebv(model::OGBLUP, population::Population; 
+                components::Symbol=:all)
+
+Predict genomic estimated breeding values.
+"""
+function predict_gebv(model::OGBLUP, population::Population; 
+                     components::Symbol=:all,
+                     traits::Union{Vector{Int}, Nothing}=nothing)
+    
+    n = population.genotype_data.n_individuals
+    p = size(model.fitted_values, 2)
+    
+    # Select traits
+    trait_idx = isnothing(traits) ? (1:p) : traits
+    
+    # Initialize GEBV matrix
+    gebv = zeros(n, length(trait_idx))
+    
+    for (i, trait) in enumerate(trait_idx)
+        if components == :all
+            # Total genetic value (broad-sense)
+            gebv[:, i] = model.random_effects[:additive][:, trait]
+            
+            if haskey(model.random_effects, :dominance)
+                gebv[:, i] .+= model.random_effects[:dominance][:, trait]
+            end
+            
+            if haskey(model.random_effects, :epistasis_aa)
+                gebv[:, i] .+= model.random_effects[:epistasis_aa][:, trait]
+                gebv[:, i] .+= model.random_effects[:epistasis_ad][:, trait]
+                gebv[:, i] .+= model.random_effects[:epistasis_dd][:, trait]
+            end
+        elseif components == :additive
+            # Narrow-sense breeding value only
+            gebv[:, i] = model.random_effects[:additive][:, trait]
+        elseif components == :non_additive
+            # Non-additive effects only
+            if haskey(model.random_effects, :dominance)
+                gebv[:, i] = model.random_effects[:dominance][:, trait]
+            end
+            
+            if haskey(model.random_effects, :epistasis_aa)
+                gebv[:, i] .+= model.random_effects[:epistasis_aa][:, trait]
+                gebv[:, i] .+= model.random_effects[:epistasis_ad][:, trait]
+                gebv[:, i] .+= model.random_effects[:epistasis_dd][:, trait]
+            end
+        else
+            error("Unknown component specification: $components")
+        end
+    end
+    
+    return gebv
+end
+
+"""
+    predict_phenotype(model::OGBLUP, new_genotypes::GenotypeData;
+                     fixed_values::Union{AbstractMatrix, Nothing}=nothing,
+                     environments::Union{AbstractVector, Nothing}=nothing)
+
+Predict phenotypes for new individuals.
+"""
+function predict_phenotype(model::OGBLUP, new_genotypes::GenotypeData;
+                          fixed_values::Union{AbstractMatrix, Nothing}=nothing,
+                          environments::Union{AbstractVector, Nothing}=nothing)
+    
+    n_new = new_genotypes.n_individuals
+    p = size(model.fitted_values, 2)
+    
+    # Fixed effects contribution
+    X_new = isnothing(fixed_values) ? ones(n_new, 1) : fixed_values
+    fixed_contribution = X_new * model.fixed_coef
+    
+    # Compute relationships between new and reference individuals
+    ref_genos = model.grms.G  # Assuming we have access to reference
+    
+    # Simplified: would need proper projection
+    # This is a placeholder for the complex projection operation
+    
+    predictions = fixed_contribution
+    
+    return predictions
+end
+
+"""
+    compute_breeding_values(model::OGBLUP; include_inbreeding::Bool=false)
+
+Compute various breeding value metrics.
+"""
+function compute_breeding_values(model::OGBLUP; include_inbreeding::Bool=false)
+    
+    bv_metrics = Dict{Symbol, Any}()
+    
+    # Traditional EBV (additive only)
+    bv_metrics[:EBV] = model.random_effects[:additive]
+    
+    # Total genetic value
+    bv_metrics[:TGV] = predict_gebv(model, components=:all)
+    
+    # Dominance deviation
+    if haskey(model.random_effects, :dominance)
+        bv_metrics[:DGV] = model.random_effects[:dominance]
+    end
+    
+    # Epistatic value
+    if haskey(model.random_effects, :epistasis_aa)
+        bv_metrics[:epistatic] = model.random_effects[:epistasis_aa] .+
+                                model.random_effects[:epistasis_ad] .+
+                                model.random_effects[:epistasis_dd]
+    end
+    
+    # Expected progeny difference
+    bv_metrics[:EPD] = 0.5 * bv_metrics[:EBV]
+    
+    # Reliability (if computed)
+    if haskey(model.random_effects, :additive_reliability)
+        bv_metrics[:reliability] = model.random_effects[:additive_reliability]
+    end
+    
+    return bv_metrics
+end
+
+"""
+    compute_prediction_accuracy(model::OGBLUP, true_values::AbstractVecOrMat;
+                              components::Symbol=:all)
+
+Compute prediction accuracy metrics.
+"""
+function compute_prediction_accuracy(model::OGBLUP, true_values::AbstractVecOrMat;
+                                   components::Symbol=:all)
+    
+    predictions = predict_gebv(model, components=components)
+    
+    # Ensure dimensions match
+    if size(predictions) != size(true_values)
+        error("Dimension mismatch between predictions and true values")
+    end
+    
+    n_traits = size(predictions, 2)
+    accuracy_metrics = Vector{Dict{Symbol, Float64}}(undef, n_traits)
+    
+    for trait in 1:n_traits
+        pred = predictions[:, trait]
+        true_val = true_values[:, trait]
+        
+        # Remove missing values
+        valid = .!ismissing.(true_val) .& .!isnan.(true_val)
+        pred_valid = pred[valid]
+        true_valid = Float64.(true_val[valid])
+        
+        # Compute metrics
+        correlation = cor(pred_valid, true_valid)
+        mse = mean((pred_valid .- true_valid).^2)
+        mae = mean(abs.(pred_valid .- true_valid))
+        
+        # Regression of true on predicted
+        X = [ones(length(pred_valid)) pred_valid]
+        β = X \ true_valid
+        bias = β[2] - 1.0
+        
+        accuracy_metrics[trait] = Dict(
+            :correlation => correlation,
+            :mse => mse,
+            :mae => mae,
+            :bias => bias,
+            :r_squared => correlation^2
+        )
+    end
+    
+    return accuracy_metrics
+end
+
+# Helper functions
+
+"""
+    build_v_matrix(grms::GRMSet, var_comp::NamedTuple)
+
+Build the phenotypic covariance matrix V.
+"""
+function build_v_matrix(grms::GRMSet, var_comp::NamedTuple)
+    V = var_comp.σ²_a * grms.G
+    
+    if var_comp.σ²_d > 0
+        V += var_comp.σ²_d * grms.D
+    end
+    
+    if var_comp.σ²_aa > 0
+        V += var_comp.σ²_aa * grms.G_AA
+    end
+    
+    if var_comp.σ²_ad > 0
+        V += var_comp.σ²_ad * grms.G_AD
+    end
+    
+    if var_comp.σ²_dd > 0
+        V += var_comp.σ²_dd * grms.G_DD
+    end
+    
+    V += var_comp.σ²_e * I
+    
+    # Add ridge for stability
+    V += RIDGE_LAMBDA * I
+    
+    return V
+end
+
+"""
+    compute_reliabilities(V, grms, var_comp)
+
+Compute prediction reliabilities.
+"""
+function compute_reliabilities(V::AbstractMatrix{<:Real},
+                             grms::GRMSet,
+                             var_comp::NamedTuple)
+    
+    n = size(V, 1)
+    reliabilities = Dict{Symbol, Vector{Float64}}()
+    
+    # Simplified reliability computation
+    # Full computation would use prediction error variance
+    
+    V_inv = inv(V)
+    
+    # Additive reliability
+    PEV_a = var_comp.σ²_a .- diag(var_comp.σ²_a^2 * grms.G * V_inv * grms.G)
+    reliabilities[:additive] = 1 .- PEV_a ./ var_comp.σ²_a
+    
+    # Similar for other components...
+    
+    return reliabilities
+end
+
+"""
+    average_variance_components(var_comps::Vector{VarianceComponents})
+
+Average variance components across traits.
+"""
+function average_variance_components(var_comps::Vector{VarianceComponents})
+    # Simple averaging - could be improved with proper multi-trait
+    n_traits = length(var_comps)
+    
+    avg_estimates = (
+        σ²_a = mean(vc.estimates.σ²_a for vc in var_comps),
+        σ²_d = mean(vc.estimates.σ²_d for vc in var_comps),
+        σ²_aa = mean(vc.estimates.σ²_aa for vc in
