@@ -16,6 +16,8 @@ using DataFrames
 using CSV
 using Optim
 using ProgressMeter
+using JuMP
+using GLPK
 
 # Core modules
 include("core/types.jl")
@@ -54,7 +56,7 @@ include("visualization/reports.jl")
 
 # Export main functions and types
 using .CoreTypes
-export GenotypeData, Population, GRMSet, OGBLUP, SimulationParameters
+export GenotypeData, Population, GRMSet, OGBLUP, SimulationParameters, MatingPlan
 
 using .Encoding
 export noia_encode
@@ -62,11 +64,20 @@ export noia_encode
 using .GRMConstruction
 export compute_grm_set
 
+using .VarianceComponentEstimation
+export estimate_variance_components
+
 using .OGBLUPModel
 export fit_ogblup, predict_gebv
 
 using .PopulationSimulation
 export simulate_population
+
+using .QualityControl
+export quality_control
+
+using .MatingOptimization
+export optimal_mating, MinimizeInbreeding, MaximizeGeneticGain
 
 
 function __init__()

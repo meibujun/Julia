@@ -4,35 +4,57 @@ module Validation
 
 using Statistics
 using LinearAlgebra
+using DataFrames
 using ..Constants
 using ..CoreTypes
 
-export validate_grm
+export validate_genotypes, validate_phenotypes, validate_grm,
+       check_data_integrity, validate_model_inputs
 
-function validate_grm(G::AbstractMatrix; check_pd::Bool=true)
+function validate_genotypes(genotypes::AbstractMatrix;
+                          ploidy::Int=2,
+                          allow_missing::Bool=true)
 
-    n = size(G, 1)
-    if size(G, 2) != n
-        throw(ArgumentError("GRM must be square"))
+    n, m = size(genotypes)
+
+    if n == 0 || m == 0
+        throw(ArgumentError("Genotype matrix cannot be empty"))
     end
 
-    if !issymmetric(G)
-        max_asym = maximum(abs.(G - G'))
-        if max_asym > EPSILON
-            throw(ArgumentError("GRM is not symmetric (max asymmetry: \$max_asym)"))
-        end
+    valid_values = Set(0:ploidy)
+    if allow_missing
+        push!(valid_values, MISSING_GENOTYPE)
     end
 
-    if check_pd
-        eigenvals = eigvals(Symmetric(G))
-        min_eigenval = minimum(eigenvals)
-
-        if min_eigenval < -EPSILON
-            throw(ArgumentError("GRM is not positive semi-definite (min eigenvalue: \$min_eigenval)"))
+    for g in genotypes
+        if !(g in valid_values)
+            throw(ArgumentError("Invalid genotype value found: \$g"))
         end
     end
 
     return true
 end
 
+function validate_phenotypes(phenotypes::AbstractVecOrMat)
+    if isempty(phenotypes)
+        throw(ArgumentError("Phenotype data cannot be empty"))
+    end
+    if any(isinf.(phenotypes)) || any(isnan.(phenotypes))
+        @warn "Phenotypes contain Inf or NaN values."
+    end
+    return true
+end
+
+function check_data_integrity(geno_data::GenotypeData, phenotypes::AbstractMatrix)
+    if geno_data.n_individuals != size(phenotypes, 1)
+        throw(DimensionMismatch("Genotype and phenotype data have different numbers of individuals."))
+    end
+    return true
+end
+
+function validate_model_inputs(; population::Population, kwargs...)
+    validate_genotypes(population.genotype_data.genotypes)
+    validate_phenotypes(population.phenotypes)
+    check_data_integrity(population.genotype_data, population.phenotypes)
+    return true
 end
