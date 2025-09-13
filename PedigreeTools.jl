@@ -246,13 +246,14 @@ function main()
     println("Sample file created: $filepath\\n")
 
     # 2. Read data from the CSV file
-    df_raw = read_pedigree_from_csv(filepath)
+    # Qualify function calls with the module name to avoid ambiguity
+    df_raw = PedigreeTools.read_pedigree_from_csv(filepath)
     println("Original data:")
     println(df_raw, "\\n")
 
     # 3. Execute the core cleaning, sorting, and re-encoding workflow
     println("--- Starting cleaning, sorting, and re-encoding workflow ---\\n")
-    result = clean_and_sort_pedigree(df_raw)
+    result = PedigreeTools.clean_and_sort_pedigree(df_raw)
     println("\\n--- Workflow execution complete ---\\n")
 
     # 4. Display the results
@@ -267,7 +268,7 @@ function main()
 
     # 5. Demonstrate converting the DataFrame to the custom Pedigree struct
     println("--- Converting to efficient Pedigree struct ---")
-    ped_struct = to_pedigree_struct(result.sorted_df, result.orig_to_recoded)
+    ped_struct = PedigreeTools.to_pedigree_struct(result.sorted_df, result.orig_to_recoded)
     println("Pedigree struct created successfully.")
     println("Contains $(length(ped_struct.records)) records.")
     println("Sample records (first 3):")
