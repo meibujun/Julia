@@ -1693,9 +1693,10 @@ function plot_pedigree(ped::Pedigree;
     end
 
     # 选择布局方法
-    method = layout == :tree ? :buchheim :
+    # 修复: Buchheim 算法不支持多父节点图 (如谱系), 改用 Sugiyama 算法
+    method = layout == :tree ? :sugiyama :
              layout == :stress ? :stress :
-             layout == :spring ? :spring : :buchheim
+             layout == :spring ? :spring : :sugiyama
 
     # 绘制图
     # 修复: 将 (src, dst) 元组解包为两个独立的参数
