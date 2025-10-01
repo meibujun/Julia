@@ -11,6 +11,11 @@ import ..ModelSpec: ModelSpec, find_trait
 
 export BayesResult, run_bayesian_evaluation, mcmc_diagnostics
 
+"""
+    BayesResult
+
+封装贝叶斯采样输出，包括后验均值、完整抽样序列以及标记效应估计。
+"""
 struct BayesResult
     method::Symbol
     trait::Symbol
@@ -21,6 +26,12 @@ struct BayesResult
     intercept::Float64
 end
 
+"""
+    run_bayesian_evaluation(model, repo; ...)
+
+直接基于模型与数据仓库运行贝叶斯基因组选择。默认实现 BayesC，可通过关键字参数切换
+BayesA/B 以及 Bayesian LASSO。
+"""
 function run_bayesian_evaluation(model::ModelSpec, repo::DataRepository; trait::Union{Symbol,AbstractString} = model.traits[1].name,
         method::Symbol = :BayesC, n_iter::Int = 4000, burn_in::Int = 1000, thin::Int = 5,
         π::Float64 = 0.95, df::Float64 = 4.2, scale::Float64 = 0.5, λ::Float64 = 0.1,
@@ -31,6 +42,11 @@ function run_bayesian_evaluation(model::ModelSpec, repo::DataRepository; trait::
         result.posterior_means[:marker_effects], marker_ids, result.posterior_means[:intercept])
 end
 
+"""
+    run_bayesian_evaluation(y, X, Z; ...)
+
+底层接口，允许用户直接传入矩阵运行采样，方便调试或实验性分析。
+"""
 function run_bayesian_evaluation(y::AbstractVector, X::AbstractMatrix, Z::AbstractMatrix; kwargs...)
     result = _bayes_sampler(Float64.(y), Matrix{Float64}(X), Matrix{Float64}(Z); kwargs...)
     marker_ids = Symbol.(("marker" .* string.(1:size(Z, 2))))
@@ -38,6 +54,11 @@ function run_bayesian_evaluation(y::AbstractVector, X::AbstractMatrix, Z::Abstra
         result.posterior_means[:marker_effects], marker_ids, result.posterior_means[:intercept])
 end
 
+"""
+    mcmc_diagnostics(result; parameter = :marker_variance)
+
+输出指定参数的后验样本均值、标准差和样本量，作为快速诊断指标。
+"""
 function mcmc_diagnostics(result::BayesResult; parameter::Symbol = :marker_variance)
     draws = get(result.draws, parameter, Float64[])
     isempty(draws) && return Dict(:mean => NaN, :std => NaN, :n => 0)
@@ -70,13 +91,13 @@ function _bayes_sampler(y::Vector{Float64}, X::Matrix{Float64}, Z::Matrix{Float6
     accum_b = zeros(m)
     accum_intercept = 0.0
     for iter in 1:n_iter
-        # update fixed effects via conjugate normal prior with large variance
+        # 更新固定效应：采用共轭正态先验（大方差），通过求解线性系统得到条件分布
         precision = XtX / σe2 + I * 1e-6
         covβ = inv(precision)
         meanβ = covβ * (X' * (y - Z * (b .* δ)) / σe2)
         β = meanβ + cholesky(Symmetric(covβ)).L * randn(rng, p)
         residual = y - X * β - Z * (b .* δ)
-        # update marker effects sequentially
+        # 逐标记更新效应
         for j in 1:m
             z = view(Z, :, j)
             residual .+= z .* (b[j] * δ[j])
@@ -111,6 +132,7 @@ function _bayes_sampler(y::Vector{Float64}, X::Matrix{Float64}, Z::Matrix{Float6
                 marker_var[j] = 1 / rand(Gamma(1.0, 1 / rate))
             end
         end
+        # 更新残差方差与遗传方差
         σe_shape = (n + 2) / 2
         σe_rate = (sum(residual .^ 2) + scale) / 2
         σe2 = rand(InverseGamma(σe_shape, σe_rate))

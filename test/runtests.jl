@@ -22,12 +22,18 @@ using CSV
     integrate_data!(repo)
 
     @testset "Data management" begin
+        clear_cache!(repo)
         report = validate_data(repo)
         @test report[:phenotype_rows] == 4
         G, gids = compute_relationship_matrix(repo; type = :genomic, ids = animals)
         @test size(G) == (4, 4)
+        G_cached, _ = compute_relationship_matrix(repo; type = :genomic, ids = animals)
+        @test G ≈ G_cached
         A, aids = compute_relationship_matrix(repo; type = :pedigree, ids = animals)
         @test size(A) == (4, 4)
+        @test !isempty(repo.cache)
+        clear_cache!(repo)
+        @test isempty(repo.cache)
     end
 
     model = define_model(traits = [:milk], fixed = [:herd], random = [("animal", :additive)])

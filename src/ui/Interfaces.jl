@@ -14,6 +14,11 @@ import ..MachineLearning: cross_validate
 
 export run_cli
 
+"""
+    run_cli(args = ARGS)
+
+命令行总入口，根据子命令调用不同工作流。若未提供参数，会打印帮助信息。
+"""
 function run_cli(args = ARGS)
     isempty(args) && return _print_usage()
     command = first(args)

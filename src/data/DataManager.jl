@@ -9,23 +9,40 @@ using Tables
 using Random
 
 export DataRepository, load_phenotypes, load_pedigree, load_genotypes, load_environment,
-       load_multiomics!, integrate_data!, validate_data, compute_relationship_matrix
+       load_multiomics!, integrate_data!, validate_data, compute_relationship_matrix,
+       clear_cache!
 
 const DEFAULT_ID = :animal
 
+"""
+    DataRepository
+
+数据仓库存放所有原始表格，并缓存计算所得的关系矩阵等中间结果。
+所有字段均允许为空 `DataFrame()`，方便按需逐步填充。
+"""
 mutable struct DataRepository
     phenotypes::DataFrame
     pedigrees::DataFrame
     genotypes::DataFrame
     environments::DataFrame
     omics::Dict{Symbol,DataFrame}
-    cache::Dict{Symbol,Any}
+    cache::Dict{Tuple,Any}
 
     function DataRepository(; phenotypes = DataFrame(), pedigrees = DataFrame(),
             genotypes = DataFrame(), environments = DataFrame(),
-            omics = Dict{Symbol,DataFrame}(), cache = Dict{Symbol,Any}())
+            omics = Dict{Symbol,DataFrame}(), cache = Dict{Tuple,Any}())
         return new(phenotypes, pedigrees, genotypes, environments, omics, cache)
     end
+end
+
+"""
+    clear_cache!(repo::DataRepository)
+
+清空数据仓库中的缓存。关系矩阵或其它昂贵结果将在下次调用时重新计算。
+"""
+function clear_cache!(repo::DataRepository)
+    empty!(repo.cache)
+    return repo
 end
 
 function _normalize_id_column!(df::DataFrame; id_col::Symbol = DEFAULT_ID, source::AbstractString = "")
@@ -39,6 +56,15 @@ function _load_table(path_or_io; kwargs...)
     return table
 end
 
+"""
+    load_phenotypes(path_or_io; id_col = :animal, trait_cols = Symbol[])
+
+读取表型数据文件。函数会：
+
+* 校验并标准化个体 ID 列；
+* 可选验证性状列是否存在；
+* 返回 `DataFrame`，未做额外复制以便用户自行处理。
+"""
 function load_phenotypes(path_or_io; id_col::Symbol = DEFAULT_ID, trait_cols::Vector{Symbol} = Symbol[],
         fixed_cols::Vector{Symbol} = Symbol[], kwargs...)
     df = _load_table(path_or_io; kwargs...)
@@ -50,6 +76,11 @@ function load_phenotypes(path_or_io; id_col::Symbol = DEFAULT_ID, trait_cols::Ve
     df
 end
 
+"""
+    load_pedigree(path_or_io; id_col = :animal, sire_col = :sire, dam_col = :dam)
+
+读取谱系文件并将父母列统一重命名为 `:sire`/`:dam`，便于后续关系矩阵计算。
+"""
 function load_pedigree(path_or_io; id_col::Symbol = DEFAULT_ID, sire_col::Symbol = :sire,
         dam_col::Symbol = :dam, kwargs...)
     df = _load_table(path_or_io; kwargs...)
@@ -61,6 +92,11 @@ function load_pedigree(path_or_io; id_col::Symbol = DEFAULT_ID, sire_col::Symbol
     df
 end
 
+"""
+    load_genotypes(path_or_io; id_col = :animal)
+
+加载基因型矩阵并将等位基因计数转化为 `Float64`，缺失值填充为 0 以保证矩阵运算安全。
+"""
 function load_genotypes(path_or_io; id_col::Symbol = DEFAULT_ID, kwargs...)
     df = _load_table(path_or_io; kwargs...)
     _normalize_id_column!(df; id_col, source = "Genotype")
@@ -73,6 +109,11 @@ function load_genotypes(path_or_io; id_col::Symbol = DEFAULT_ID, kwargs...)
     df
 end
 
+"""
+    load_environment(path_or_io; id_col = :animal)
+
+导入环境或管理因素表格，与表型表按动物 ID 进行整合。
+"""
 function load_environment(path_or_io; id_col::Symbol = DEFAULT_ID, kwargs...)
     df = _load_table(path_or_io; kwargs...)
     _normalize_id_column!(df; id_col, source = "Environment")
@@ -80,15 +121,26 @@ function load_environment(path_or_io; id_col::Symbol = DEFAULT_ID, kwargs...)
     df
 end
 
+"""
+    load_multiomics!(repo, name, path_or_io; id_col = :animal)
+
+将多组学数据加载进仓库，并刷新缓存，保证后续计算使用最新数据。
+"""
 function load_multiomics!(repo::DataRepository, name::Symbol, path_or_io; id_col::Symbol = DEFAULT_ID, kwargs...)
     df = _load_table(path_or_io; kwargs...)
     _normalize_id_column!(df; id_col, source = string(name))
     rename!(df, Dict(id_col => DEFAULT_ID))
     repo.omics[name] = df
-    repo.cache = Dict{Symbol,Any}()
+    clear_cache!(repo)
     return repo
 end
 
+"""
+    integrate_data!(repo; how = :left)
+
+按照指定的连接策略将多组学与环境信息合并到表型表中。默认采用左连接保留
+所有表型记录，同时会清空缓存。
+"""
 function integrate_data!(repo::DataRepository; how::Symbol = :left)
     joined = repo.phenotypes
     for (label, table) in pairs(repo.omics)
@@ -98,7 +150,7 @@ function integrate_data!(repo::DataRepository; how::Symbol = :left)
         joined = _generic_join(joined, repo.environments; how, suffix = "_env")
     end
     repo.phenotypes = joined
-    repo.cache = Dict{Symbol,Any}()
+    clear_cache!(repo)
     return repo
 end
 
@@ -111,6 +163,15 @@ function _generic_join(left::DataFrame, right::DataFrame; how::Symbol, suffix::A
     return joined
 end
 
+"""
+    validate_data(repo)
+
+对仓库中的数据执行快速一致性检查，返回包含多项统计量的字典。例如：
+
+* 表型记录数与缺失 ID 数量；
+* 基因型与表型 ID 不一致情况；
+* 谱系回路检测。
+"""
 function validate_data(repo::DataRepository)
     report = Dict{Symbol,Any}()
     ph = repo.phenotypes
@@ -161,21 +222,40 @@ function _detect_pedigree_cycles(pedigree::DataFrame)
     return false
 end
 
+"""
+    compute_relationship_matrix(repo; type = :genomic, ids = nothing,
+        method = :vanraden, regularisation = 1e-6)
+
+根据仓库数据计算关系矩阵，并自动缓存结果。再次调用同样的参数时会直接返回
+缓存值，避免重复计算。
+"""
 function compute_relationship_matrix(repo::DataRepository; type::Symbol = :genomic,
         ids = nothing, method::Symbol = :vanraden, regularisation::Float64 = 1e-6)
     ids === nothing && (ids = collect(skipmissing(repo.phenotypes[!, DEFAULT_ID])))
     ids = String.(ids)
+    key = (:relationship, type, method, regularisation, hash(ids), length(ids))
+    if haskey(repo.cache, key)
+        cached = repo.cache[key]
+        return cached[:matrix], cached[:ids]
+    end
     if type == :genomic
-        return _compute_genomic(repo, ids; method, regularisation)
+        matrix, ordered_ids = _compute_genomic(repo, ids; method, regularisation)
     elseif type == :pedigree
-        return _compute_pedigree(repo, ids; regularisation)
+        matrix, ordered_ids = _compute_pedigree(repo, ids; regularisation)
     elseif type == :single_step
-        return _compute_single_step(repo, ids; method, regularisation)
+        matrix, ordered_ids = _compute_single_step(repo, ids; method, regularisation)
     else
         throw(ArgumentError("Unknown relationship matrix type $(type)"))
     end
+    repo.cache[key] = Dict(:matrix => matrix, :ids => ordered_ids)
+    return matrix, ordered_ids
 end
 
+"""
+    _compute_genomic(repo, ids; method, regularisation)
+
+依据 VanRaden 等方法计算基因组关系矩阵，并进行均值中心化与正则化。
+"""
 function _compute_genomic(repo::DataRepository, ids::Vector{String}; method::Symbol, regularisation::Float64)
     isempty(repo.genotypes) && throw(ArgumentError("Genotype table is empty"))
     geno = repo.genotypes
@@ -210,6 +290,11 @@ function _compute_genomic(repo::DataRepository, ids::Vector{String}; method::Sym
     return Symmetric(G), ids
 end
 
+"""
+    _compute_pedigree(repo, ids; regularisation)
+
+使用回溯算法构建谱系关系矩阵，自动补全祖先并按请求的个体顺序返回子矩阵。
+"""
 function _compute_pedigree(repo::DataRepository, ids::Vector{String}; regularisation::Float64)
     isempty(repo.pedigrees) && throw(ArgumentError("Pedigree table is empty"))
     pedigree = repo.pedigrees
@@ -279,6 +364,11 @@ function _pedigree_depth(id::String, pedmap::Dict{String,Tuple{Union{String,Noth
     return depth
 end
 
+"""
+    _compute_single_step(repo, ids; method, regularisation)
+
+实现单步 GBLUP 的 H 矩阵，融合谱系与基因组信息。
+"""
 function _compute_single_step(repo::DataRepository, ids::Vector{String}; method::Symbol, regularisation::Float64)
     A_full, all_ids = _compute_full_pedigree(repo)
     selector = [findfirst(==(id), all_ids) for id in ids]
@@ -302,6 +392,11 @@ function _compute_single_step(repo::DataRepository, ids::Vector{String}; method:
     return H[selector, selector], ids
 end
 
+"""
+    _compute_full_pedigree(repo)
+
+返回完整谱系关系矩阵及排序后的个体列表，供单步法复用。
+"""
 function _compute_full_pedigree(repo::DataRepository)
     isempty(repo.pedigrees) && throw(ArgumentError("Pedigree table is empty"))
     ped = repo.pedigrees

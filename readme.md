@@ -11,6 +11,7 @@
 - 统一加载表型、谱系、基因型、环境及多组学数据。
 - 自动验证数据完整性，检测缺失 ID、重复个体、谱系回路等问题。
 - 支持谱系关系矩阵 (A)、基因组关系矩阵 (G，VanRaden 方法) 以及单步关系矩阵 (H) 计算。
+- 关系矩阵自动缓存，可通过 `clear_cache!` 手动清理避免内存占用。
 
 ### 模型定义与遗传评估
 - 通过 `define_model` 配置多性状、固定效应与随机效应结构。
@@ -49,6 +50,8 @@ repo.pedigrees  = load_pedigree("pedigree.csv")
 repo.genotypes  = load_genotypes("genotypes.csv")
 integrate_data!(repo)
 validate_data(repo) |> println
+# 如需释放缓存
+clear_cache!(repo)
 
 # 2. 定义模型
 model = define_model(
