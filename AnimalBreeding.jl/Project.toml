@@ -1,0 +1,21 @@
+name = "AnimalBreeding"
+uuid = "99e9d834-9545-41cf-8c33-598e8f879fb5"
+authors = ["Jules <jules@example.com>"]
+version = "0.1.0"
+
+[deps]
+CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
+Distributions = "31c24e10-a181-5473-b8eb-cc856c621d33"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c82"
+ProgressMeter = "92933f4c-e287-5a05-a399-4b506db050ca"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
+Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
+
+[compat]
+CSV = "0.10"
+DataFrames = "1"
+Distributions = "0.25"
+julia = "1.9"
+ProgressMeter = "1"
