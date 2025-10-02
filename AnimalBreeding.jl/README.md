@@ -1,140 +1,157 @@
 # AnimalBreeding.jl - 多物种动物育种软件系统
 
-[![Julia Version](https://img.shields.io/badge/Julia-1.11.6-blue.svg)](https://julialang.org)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Julia Version](https://img.shields.io/badge/julia-1.11.6%2B-blue.svg)](https://julialang.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Documentation](https://img.shields.io/badge/docs-stable-blue.svg)](https://your-docs-url.com)
 
-一个功能全面、模块化的动物育种遗传评估软件系统，使用Julia语言开发。本项目旨在提供一个从数据管理到高级分析（包括BLUP、GBLUP等）的完整解决方案，支持牛、猪、羊、家禽等多物种的育种应用。
+一个功能全面、模块化、高性能的动物育种遗传评估软件系统，使用Julia语言开发，支持牛、猪、羊、家禽等多物种育种应用。
 
 ## ✨ 主要特性
 
-### v0.1.0 已实现功能
-- **核心数据结构**: `DataManager` 用于统一管理所有数据。
-- **多数据源导入**: 支持从CSV文件加载谱系、基因型和表型数据。
-- **数据验证**: 提供数据一致性和完整性检查功能。
-- **关系矩阵计算**:
-  - 谱系关系矩阵 (A 矩阵)
-  - 基因组关系矩阵 (G 矩阵, 基于VanRaden方法)
-- **BLUP遗传评估**:
-  - 支持单性状动物模型。
-  - 基于已知遗传力（h²）的BLUP求解。
-- **模块化架构**: 清晰的代码结构，易于维护和扩展。
-- **完整的测试套件**: 提供单元测试和集成测试，确保代码质量。
+### 核心功能
 
-### 计划中功能
-- **方差组分估计**: REML (限制性最大似然法)。
-- **高级模型**: 多性状模型、随机回归模型、阈值模型。
-- **基因组选择**: 单步GBLUP (SS-GBLUP)、贝叶斯方法 (BayesA/B/C)。
-- **性能优化**: GPU加速和多线程并行计算。
-- **用户界面**: 提供Web图形界面和更强大的命令行工具。
+- **多数据源整合**: 支持谱系、基因型、表型、多组学等多种数据类型，并提供标准化数据验证和质量控制。
+- **关系矩阵计算**: 高效计算谱系关系矩阵 (A)、基因组关系矩阵 (G, VanRaden方法) 和单步关系矩阵 (H)。
+- **BLUP遗传评估**: 实现传统BLUP, GBLUP, 和单步GBLUP (SS-GBLUP)，并包含REML方差组分估计。
 
-## 📦 安装与配置
+### 先进方法
+
+- **贝叶斯基因组选择**: 实现BayesA, BayesB, BayesC, และ Bayesian LASSO，并提供完整的MCMC诊断工具。
+- **机器学习集成**: 提供随机森林和神经网络模型用于非线性表型预测，并包含交叉验证框架。
+- **高级遗传模型**:
+  - **测定日模型**: 用于泌乳曲线等纵向数据分析。
+  - **上位性分析**: 建模基因间的交互效应。
+  - **G×E互作**: 使用反应范式模型分析基因组与环境的互作。
+- **育种规划与选择**:
+  - **选择指数**: 多性状综合选择。
+  - **最优贡献选择 (OCS)**: 平衡遗传进展与近交。
+  - **交配设计**: 制定考虑近交的优化交配方案。
+  - **遗传进展预测**: 量化选择策略的长期效果。
+
+### 技术特点
+
+- **高性能计算**: 提供GPU加速 (CUDA)、多线程并行和稀疏矩阵优化等高性能计算方案。
+- **模块化架构**: 清晰、松耦合的模块设计，易于维护和扩展。
+- **科学严谨**: 所有核心算法均基于已发表的科学文献，并提供验证和诊断工具。
+- **数据模拟**: 内置强大的数据模拟引擎，可生成包含谱系、基因型、表型和多组学数据的复杂数据集，用于测试和研究。
+
+## 📦 安装
 
 ### 系统要求
-- Julia 1.11.6 或更高版本。
-- 推荐至少 8GB 内存。
+
+- Julia 1.11.6 或更高版本
+- 推荐至少 8GB 内存
+- 可选: NVIDIA GPU 和 CUDA Toolkit (用于GPU加速)
 
 ### 安装步骤
 
 1.  **安装 Julia**:
-    如果您的系统中没有安装Julia，请从 [Julia官网](https://julialang.org/downloads/) 下载并安装。
+    从 [Julia官网](https://julialang.org/downloads/) 下载并安装。
 
 2.  **安装 AnimalBreeding.jl**:
-    打开 Julia REPL (命令行界面)，然后使用内置的包管理器 `Pkg` 来安装本软件。您需要将 `path/to/AnimalBreeding.jl` 替换为本仓库在您本地的实际路径。
+    启动 Julia REPL，然后使用内置的包管理器 `Pkg` 进行安装。
 
     ```julia
     using Pkg
-    Pkg.add(path="path/to/AnimalBreeding.jl")
+    # 从GitHub安装 (推荐)
+    Pkg.add(url="https://github.com/your-repo/AnimalBreeding.jl")
+
+    # 或者，如果您已将代码克隆到本地，可以进行开发模式安装
+    # Pkg.develop(path="/path/to/AnimalBreeding.jl")
     ```
-    或者，如果您想以开发模式安装（方便修改代码），可以使用 `dev` 命令：
-    ```julia
-    using Pkg
-    Pkg.dev("path/to/AnimalBreeding.jl")
-    ```
-    此命令会自动安装 `Project.toml` 文件中列出的所有依赖包。
 
 ## 🚀 快速开始
 
-以下是一个完整的使用示例，展示了如何使用本软件进行一次简单的BLUP评估。
+### 基础使用示例: GBLUP评估
 
 ```julia
-# 1. 导入 AnimalBreeding 模块
 using AnimalBreeding
 
-# 2. 准备数据 (请将 "path/to/data/" 替换为实际路径)
-# 示例数据位于项目根目录下的 `data/` 文件夹中。
-data_path = "path/to/AnimalBreeding.jl/data/"
+# 1. 模拟一个标准数据集
+dm, true_params = simulate_complete_dataset(
+    n_generations=5,
+    n_per_generation=200,
+    n_markers=5000,
+    h2=0.3
+);
 
-# 创建数据管理器
-dm = DataManager()
+# 2. 计算基因组关系矩阵
+compute_relationship_matrix(dm, type=:genomic);
 
-# 加载谱系、表型数据
-dm.pedigree = load_pedigree(joinpath(data_path, "pedigree.csv"))
-dm.phenotypes = load_phenotypes(joinpath(data_path, "phenotypes.csv"),
-                                trait_cols=["milk"],
-                                fixed_cols=["herd"])
-
-# 3. 验证数据一致性
-# 这是一个好习惯，确保数据质量
-validate_data(dm)
-
-# 4. 计算关系矩阵
-# 对于普通BLUP，我们需要A矩阵
-compute_relationship_matrix(dm, type=:A)
-
-# 5. 定义统计模型
+# 3. 定义一个简单的加性模型
 model = define_model(
-    traits = ["milk"],
-    fixed = ["herd"],
-    random = [("animal", :additive)]
-)
+    traits=["trait"],
+    fixed=["herd"],
+    random=[("animal", :additive)]
+);
 
-# 6. 运行遗传评估
-# 这里我们假设遗传力 h² = 0.5
-result = run_evaluation(model, dm, h2=0.5)
+# 4. 运行GBLUP评估 (使用dm中的G矩阵)
+result = run_evaluation(model, dm, method=:GBLUP, h2=0.3);
 
-# 7. 查看和保存结果
-println("评估完成，结果如下：")
+# 5. 查看结果摘要
 println(result)
 
-# 将育种值保存到文件
-save_results(result, "breeding_values.csv")
-println("育种值已保存到 breeding_values.csv 文件。")
+# 6. 保存育种值
+save_results(result, dm, "gblup_breeding_values.csv");
+```
+
+### 高级功能示例: 育种规划
+
+```julia
+using AnimalBreeding
+
+# ... (假设已有dm和评估结果result) ...
+
+# 1. 最优贡献选择 (OCS)
+# 选择20个个体，同时将平均关系控制在0.1以下
+ocs_results = optimal_contribution_selection(
+    result.breeding_values.EBV,
+    dm.G_matrix,
+    20,
+    max_relationship=0.1
+);
+selected_sires_indices = ocs_results["selected_indices"];
+
+# 2. 设计交配计划
+# 假设我们有100头母畜
+females_indices = sample(1:nrow(dm.pedigree), 100, replace=false);
+
+mating_plan = design_mating_plan(
+    selected_sires_indices,
+    females_indices,
+    dm.G_matrix, # 使用G矩阵控制近交
+    result.breeding_values.EBV[selected_sires_indices],
+    result.breeding_values.EBV[females_indices],
+    max_inbreeding=0.0625 # 控制近交在同父半兄妹水平
+);
+
+println("生成的交配计划:")
+println(first(mating_plan, 5))
+```
+
+## 📖 完整功能演示
+
+要查看本软件所有功能的完整演示，请在安装后运行：
+
+```julia
+using AnimalBreeding
+
+# 运行所有内置示例
+run_all_examples()
 ```
 
 ## 🧪 测试
 
-我们提供了一套完整的测试来保证软件的质量。您可以按以下步骤运行测试：
+运行完整的测试套件以确保所有功能正常工作：
 
-1.  确保您已经通过 `Pkg.dev` 或 `Pkg.add` 安装了本软件。
-2.  在 Julia REPL 中，运行：
-
-    ```julia
-    using Pkg
-    Pkg.test("AnimalBreeding")
-    ```
-
-这将自动执行 `test/runtests.jl` 文件中的所有测试用例。
-
-## 🔬 主要算法简介
-
-### BLUP (最佳线性无偏预测)
-系统通过求解混合模型方程 (MME) 来获得育种值。MME的矩阵形式如下：
-
+```julia
+using Pkg
+Pkg.test("AnimalBreeding")
 ```
-[ X'X   X'Z     ] [β̂]   [ X'y ]
-[ Z'X   Z'Z+λA⁻¹ ] [û] = [ Z'y ]
-```
-其中:
-- `y`: 表型向量
-- `β̂`: 固定效应的估计值
-- `û`: 随机效应 (育种值) 的预测值
-- `X`, `Z`: 分别是固定和随机效应的设计矩阵
-- `A⁻¹`: 谱系关系矩阵的逆
-- `λ = σ²ₑ / σ²ₐ`: 方差组分的比率
 
 ## 🤝 贡献
 
-我们欢迎任何形式的贡献，包括报告问题、提出功能建议或直接贡献代码！
+我们欢迎任何形式的贡献！无论是报告问题、提出功能建议还是直接贡献代码，请通过本项目的GitHub页面进行。
 
 ## 📄 许可证
 
