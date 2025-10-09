@@ -18,7 +18,8 @@
 """
 function compute_G_matrix(genotypes::DataFrame; method::Symbol=:VanRaden1,
                           impute::Symbol=:mean, scaling::Bool=true)
-    @info "计算基因组关系矩阵 G (方法: $method)..."
+    start_msg = string("计算基因组关系矩阵 G (方法: ", method, ")...")
+    @info start_msg
 
     id_col_name = names(genotypes)[1]
     marker_df = genotypes[:, Not(Symbol(id_col_name))]
@@ -52,7 +53,12 @@ function compute_G_matrix(genotypes::DataFrame; method::Symbol=:VanRaden1,
 
         G = (Z * Z') / denominator
     else
-        error("不支持的G矩阵计算方法: $(method)。目前仅支持 `:VanRaden1`。")
+        method_err = string(
+            "不支持的G矩阵计算方法: ",
+            method,
+            "。目前仅支持 `:VanRaden1`。",
+        )
+        error(method_err)
     end
 
     if scaling
@@ -62,6 +68,7 @@ function compute_G_matrix(genotypes::DataFrame; method::Symbol=:VanRaden1,
         end
     end
 
-    @info "G矩阵计算完成，维度: $(size(G))。"
+    finish_msg = string("G矩阵计算完成，维度: ", size(G), "。")
+    @info finish_msg
     return G
 end

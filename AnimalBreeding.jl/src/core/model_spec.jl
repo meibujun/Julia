@@ -76,7 +76,12 @@ function define_model(;
         elseif r isa RandomEffect
             push!(random_effects, r)
         else
-            error("无效的随机效应定义: $(r)。应为 (名称::String, 类型::Symbol) 元组或 RandomEffect 对象。")
+            err_msg = string(
+                "无效的随机效应定义: ",
+                r,
+                "。应为 (名称::String, 类型::Symbol) 元组或 RandomEffect 对象。",
+            )
+            error(err_msg)
         end
     end
 
@@ -86,7 +91,16 @@ function define_model(;
         random=random_effects
     )
 
-    @info "模型定义完成: $(length(traits))个相干, $(length(fixed))个固定效应, $(length(random_effects))个随机效应"
+    summary_msg = string(
+        "模型定义完成: ",
+        length(traits),
+        "个相干, ",
+        length(fixed),
+        "个固定效应, ",
+        length(random_effects),
+        "个随机效应",
+    )
+    @info summary_msg
 
     return model
 end

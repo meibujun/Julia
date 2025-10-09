@@ -62,7 +62,8 @@ function build_design_matrices(phenotypes::DataFrame, model::ModelSpec, animal_m
             Z = sparse(I_idx, J_idx, V_val, n_obs, n_total_animals)
             Z_dict[effect.name] = Z
         else
-            @warn "暂未实现随机效应类型 $(effect.type)，将被忽略。"
+            warn_msg = string("暂未实现随机效应类型 ", effect.type, "，将被忽略。")
+            @warn warn_msg
         end
     end
 
@@ -70,7 +71,15 @@ function build_design_matrices(phenotypes::DataFrame, model::ModelSpec, animal_m
         @info "模型中未定义随机效应，仅构建固定效应矩阵。"
     else
         dims = first(values(Z_dict)) |> size
-        @info "设计矩阵构建完成: X$(size(X)), Z$(dims), y$(length(y))"
+        finish_msg = string(
+            "设计矩阵构建完成: X",
+            size(X),
+            ", Z",
+            dims,
+            ", y",
+            length(y),
+        )
+        @info finish_msg
     end
 
     return X, Z_dict, y
