@@ -38,6 +38,7 @@ include("data/pedigree.jl")
 include("data/genotypes.jl")
 include("data/phenotypes.jl")
 include("data/validation.jl")
+include("data/simulation.jl")
 
 # --- 关系矩阵 ---
 include("relationships/pedigree_matrix.jl")
@@ -75,6 +76,7 @@ export DataManager,
        solve_mme,
        estimate_variances_reml,
        run_evaluation,
-       save_results
+       save_results,
+       simulate_complete_dataset
 
 end # module AnimalBreeding
