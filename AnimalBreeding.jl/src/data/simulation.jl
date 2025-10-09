@@ -96,7 +96,7 @@ function simulate_complete_dataset(; n_generations::Int=3,
 
     # 选择QTL并生成真实遗传效应
     n_qtl = clamp(n_qtl, 1, n_markers)
-    qtl_indices = sort(rand(rng, 1:n_markers, n_qtl; replace=false))
+    qtl_indices = sort(randperm(rng, n_markers)[1:n_qtl])
     marker_effects = zeros(Float64, n_markers)
     marker_effects[qtl_indices] .= randn(rng, n_qtl)
 
