@@ -52,7 +52,7 @@ function compute_G_matrix(genotypes::DataFrame; method::Symbol=:VanRaden1,
 
         G = (Z * Z') / denominator
     else
-        error("不支持的G矩阵计算方法: $method。目前仅支持 `:VanRaden1`。")
+        error("不支持的G矩阵计算方法: $(method)。目前仅支持 `:VanRaden1`。")
     end
 
     if scaling
