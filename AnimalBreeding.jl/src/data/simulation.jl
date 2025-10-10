@@ -76,7 +76,11 @@ function simulate_complete_dataset(; n_generations::Int=3,
         end
     end
 
-    pedigree = DataFrame(animal = animal_ids, sire = sires, dam = dams)
+    pedigree = DataFrame((
+        animal = animal_ids,
+        sire = sires,
+        dam = dams,
+    ))
 
     # 生成基因型矩阵
     marker_names = ["marker_$(lpad(string(i), 4, '0'))" for i in 1:n_markers]
@@ -130,12 +134,12 @@ function simulate_complete_dataset(; n_generations::Int=3,
     residual_var = max(bv_var * (1 - h2) / max(h2, eps()), 1e-6)
     phenotypes = true_breeding_values + herd_component + randn(rng, total_animals) .* sqrt(residual_var)
 
-    phenotype_df = DataFrame(
+    phenotype_df = DataFrame((
         animal = animal_ids,
-        Symbol(trait_name) => phenotypes,
-        :herd => herd_ids,
-        :TBV => true_breeding_values,
-    )
+        herd = herd_ids,
+        TBV = true_breeding_values,
+    ))
+    phenotype_df[!, Symbol(trait_name)] = phenotypes
 
     dm = DataManager()
     dm.pedigree = pedigree
