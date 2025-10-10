@@ -43,6 +43,7 @@ include("data/validation.jl")
 include("relationships/pedigree_matrix.jl")
 include("relationships/genomic_matrix.jl")
 include("relationships/singlestep_matrix.jl")
+include("relationships/relationship_manager.jl")
 
 # --- BLUP 评估 ---
 include("blup/mme_solver.jl")
@@ -70,6 +71,7 @@ export DataManager,
        compute_A_inv_matrix,
        compute_G_matrix,
        compute_H_matrix_inv,
+       compute_relationship_matrix,
        build_design_matrices,
        setup_mme,
        solve_mme,
