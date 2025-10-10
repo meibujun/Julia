@@ -19,7 +19,7 @@ module AnimalBreeding
 # 2. 子模块可以直接使用这些常用依赖，减少重复引用；
 # 3. 方便利用预编译缓存提高性能。
 # ============================================================================
-using LinearAlgebra, SparseArrays, Statistics, Random, Distributions
+using LinearAlgebra, SparseArrays, Statistics, Random
 using DataFrames, CSV, ProgressMeter, Printf, Dates
 
 # ============================================================================
