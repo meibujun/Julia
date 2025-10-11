@@ -49,59 +49,69 @@ function estimate_variances_reml(
 )
     @info "开始REML方差组分估计 (max_iter=$max_iter, tol=$tol, relaxation=$relaxation_param)..."
 
-    # 1. 初始化方差组分
+    if isempty(model.random_effects)
+        error("REML估计需要至少一个随机效应。")
+    end
+
+    n_obs = length(y)
+    n_fixed = size(X, 2)
+
     total_variance = var(y)
     n_random = length(model.random_effects)
 
-    variances = Dict{String, Float64}(
-        "residual" => total_variance * 0.6
-    )
+    variances = Dict{String, Float64}("residual" => total_variance * 0.6)
     for effect in model.random_effects
         variances[effect.name] = total_variance * 0.4 / n_random
     end
 
     @info "初始方差组分: " * join(["$k=$(round(v, digits=4))" for (k,v) in variances], ", ")
 
-    # 2. 迭代求解
+    ranges = _random_effect_ranges(model, Z_dict, n_fixed)
+    random_offsets = zeros(Float64, n_obs)
+    penalty_dense_cache = nothing
+
     p = Progress(max_iter, desc="REML迭代: ")
     for iter in 1:max_iter
         variances_old = copy(variances)
 
-        # --- E-步: 求解MME ---
         C, rhs = setup_mme(X, Z_dict, y, dm, model, variances)
-        C_inv = inv(Matrix(C)) # 警告: 这是计算瓶颈，更高级的AI-REML会避免它
-        solutions = C_inv * rhs
+        C_dense = Matrix(C)
+        factor = cholesky(Symmetric(C_dense); check=false)
+        solutions = factor \ rhs
+        C_inv = Matrix(inv(factor))
 
-        # --- M-步: 更新方差 ---
+        _accumulate_random_offsets!(random_offsets, model, Z_dict, solutions, ranges)
+        residuals = y - X * solutions[1:n_fixed] - random_offsets
+
         variances_new = Dict{String, Float64}()
-        n_obs, n_fixed = size(X)
 
-        # 更新残差方差
-        residuals = y - X * solutions[1:n_fixed] - sum(Z * solutions[n_fixed+1:end] for (name, Z) in Z_dict)
-        s_y = dot(residuals, residuals)
-        tr_term = tr(C_inv[1:n_fixed, 1:n_fixed] * (X' * X)) # 简化
-        variances_new["residual"] = (s_y + tr_term) / n_obs
+        denom_res = max(n_obs - n_fixed, 1)
+        variances_new["residual"] = max(1e-9, dot(residuals, residuals) / denom_res)
 
-        # 更新随机效应方差
-        current_pos = n_fixed
         for effect in model.random_effects
             name = effect.name
-            dim = size(Z_dict[name], 2)
-            u = solutions[current_pos+1 : current_pos+dim]
+            rng = ranges[name]
+            u = solutions[rng]
+            dim = length(rng)
 
-            if effect.type == :additive && !isnothing(dm.A_inv_matrix)
-                u_Ainv_u = dot(u, dm.A_inv_matrix * u)
-                tr_term_u = tr(C_inv[current_pos+1:end, current_pos+1:end] * dm.A_inv_matrix) # 简化
-                variances_new[name] = (u_Ainv_u + tr_term_u) / dim
+            if effect.type == :additive
+                if penalty_dense_cache === nothing
+                    penalty_dense_cache = Matrix(_relationship_inverse(dm))
+                end
+                penalty = penalty_dense_cache
+            else
+                penalty = Matrix{Float64}(I, dim, dim)
             end
-            current_pos += dim
+
+            trace_term = sum(C_inv[rng, rng] .* penalty)
+            quad_form = dot(u, penalty * u)
+            variances_new[name] = max(1e-9, (quad_form + trace_term) / dim)
         end
 
-        # 3. 检查收敛
         max_rel_change = 0.0
-        for k in keys(variances)
-            if haskey(variances_new, k) && abs(variances_old[k]) > 1e-9
-                rel_change = abs(variances_new[k] - variances_old[k]) / variances_old[k]
+        for (key, old_val) in variances_old
+            if haskey(variances_new, key) && abs(old_val) > 1e-9
+                rel_change = abs(variances_new[key] - old_val) / old_val
                 max_rel_change = max(max_rel_change, rel_change)
             end
         end
@@ -111,14 +121,16 @@ function estimate_variances_reml(
         if max_rel_change < tol
             finish!(p)
             @info "REML在第 $iter 次迭代后收敛。"
-            return REMLResult(variances, 0.0, iter, true)
+            for (k, v) in variances_new
+                variances[k] = v
+            end
+            return REMLResult(copy(variances), 0.0, iter, true)
         end
 
-        # 4. 松弛更新
-        for k in keys(variances)
+        for (k, old_val) in variances_old
             if haskey(variances_new, k)
-                new_val = relaxation_param * variances_new[k] + (1 - relaxation_param) * variances_old[k]
-                variances[k] = max(1e-9, new_val) # 保证方差非负
+                new_val = relaxation_param * variances_new[k] + (1 - relaxation_param) * old_val
+                variances[k] = max(1e-9, new_val)
             end
         end
     end

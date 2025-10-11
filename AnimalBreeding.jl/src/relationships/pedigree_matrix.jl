@@ -55,7 +55,7 @@ function compute_A_matrix(pedigree::DataFrame)
     sire_idx = [get(id_map, sorted_ped.sire[i], 0) for i in 1:n]
     dam_idx  = [get(id_map, sorted_ped.dam[i], 0) for i in 1:n]
 
-    for i in 1:n
+    @inbounds for i in 1:n
         s_idx = sire_idx[i]
         d_idx = dam_idx[i]
 
@@ -64,16 +64,16 @@ function compute_A_matrix(pedigree::DataFrame)
             continue
         end
 
-        for j in 1:(i-1)
-            val = 0.0
+        if i > 1
+            row_view = view(A, 1:i-1, i)
+            fill!(row_view, 0.0)
             if s_idx > 0
-                val += 0.5 * A[s_idx, j]
+                row_view .+= 0.5 .* view(A, 1:i-1, s_idx)
             end
             if d_idx > 0
-                val += 0.5 * A[d_idx, j]
+                row_view .+= 0.5 .* view(A, 1:i-1, d_idx)
             end
-            A[i, j] = val
-            A[j, i] = val
+            view(A, i, 1:i-1) .= row_view'
         end
 
         if s_idx > 0 && d_idx > 0
@@ -102,7 +102,7 @@ function compute_A_inv_matrix(pedigree::DataFrame)
     J_idx = Int[]
     V_val = Float64[]
 
-    for i in 1:n
+    @inbounds for i in 1:n
         animal = sorted_ped.animal[i]
         sire = sorted_ped.sire[i]
         dam  = sorted_ped.dam[i]

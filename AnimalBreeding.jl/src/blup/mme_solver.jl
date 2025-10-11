@@ -25,7 +25,8 @@ function build_design_matrices(phenotypes::DataFrame, model::ModelSpec, animal_m
     y = Float64.(pheno_clean[!, trait])
     n_obs = length(y)
 
-    X_cols = [ones(Float64, n_obs)]
+    X_cols = Vector{Vector{Float64}}()
+    push!(X_cols, ones(Float64, n_obs))
     for effect_name in model.fixed_effects
         column = pheno_clean[!, effect_name]
         value_type = eltype(skipmissing(column))
@@ -34,9 +35,11 @@ function build_design_matrices(phenotypes::DataFrame, model::ModelSpec, animal_m
         else
             levels = unique(column)
             if length(levels) > 1
+                ref_level = levels[1]
                 for level in levels[2:end]
                     push!(X_cols, Float64.(column .== level))
                 end
+                @debug "固定效应 $(effect_name) 使用基准水平 $(ref_level)" ref_level
             end
         end
     end
@@ -100,6 +103,8 @@ function setup_mme(X::Matrix{Float64}, Z_dict::Dict{String,SparseMatrixCSC{Float
     rhs[1:n_fixed] = (X' * y) .* R_inv_val
 
     current_pos = n_fixed
+    relationship_inv_cache = nothing
+
     for effect in model.random_effects
         name = effect.name
         Z = Z_dict[name]
@@ -111,17 +116,18 @@ function setup_mme(X::Matrix{Float64}, Z_dict::Dict{String,SparseMatrixCSC{Float
         C[1:n_fixed, start_idx:end_idx] = XtZ .* R_inv_val
         C[start_idx:end_idx, 1:n_fixed] = XtZ' .* R_inv_val
 
-        C[ start_idx:end_idx, start_idx:end_idx] = (Z' * Z) .* R_inv_val
+        C[start_idx:end_idx, start_idx:end_idx] = (Z' * Z) .* R_inv_val
 
         if effect.type == :additive
             lambda = sigma2_e / variances[name]
-            if !isnothing(dm.H_inv_matrix)
-                C[start_idx:end_idx, start_idx:end_idx] += lambda .* Matrix(dm.H_inv_matrix)
-            elseif !isnothing(dm.A_inv_matrix)
-                C[start_idx:end_idx, start_idx:end_idx] += lambda .* Matrix(dm.A_inv_matrix)
-            else
-                error("模型需要A⁻¹或H⁻¹，但未在DataManager中计算。")
+            if relationship_inv_cache === nothing
+                relationship_inv_cache = _relationship_inverse(dm)
             end
+            penalty = relationship_inv_cache
+            if size(penalty, 1) != dim
+                error("关系矩阵维度 ($(size(penalty,1))) 与随机效应 '$name' 维度 ($dim) 不一致。")
+            end
+            C[start_idx:end_idx, start_idx:end_idx] += lambda .* penalty
         end
 
         rhs[start_idx:end_idx] = (Z' * y) .* R_inv_val
@@ -141,4 +147,42 @@ function solve_mme(C::SparseMatrixCSC, rhs::Vector{Float64})
     solution = C \ rhs
     @info "MME求解完成。"
     return solution
+end
+
+function _relationship_inverse(dm::DataManager)
+    if !isnothing(dm.H_inv_matrix)
+        return SparseMatrixCSC(dm.H_inv_matrix)
+    elseif !isnothing(dm.A_inv_matrix)
+        return SparseMatrixCSC(dm.A_inv_matrix)
+    else
+        error("模型需要A⁻¹或H⁻¹，但未在DataManager中计算。")
+    end
+end
+
+function _random_effect_ranges(model::ModelSpec, Z_dict::Dict{String,SparseMatrixCSC{Float64,Int}}, n_fixed::Int)
+    ranges = Dict{String, UnitRange{Int}}()
+    current_pos = n_fixed
+    for effect in model.random_effects
+        name = effect.name
+        Z = Z_dict[name]
+        dim = size(Z, 2)
+        ranges[name] = current_pos + 1:current_pos + dim
+        current_pos += dim
+    end
+    return ranges
+end
+
+function _accumulate_random_offsets!(buffer::Vector{Float64}, model::ModelSpec,
+                                     Z_dict::Dict{String,SparseMatrixCSC{Float64,Int}},
+                                     solutions::Vector{Float64}, ranges::Dict{String,UnitRange{Int}})
+    fill!(buffer, 0.0)
+    for effect in model.random_effects
+        name = effect.name
+        if !haskey(ranges, name)
+            continue
+        end
+        rng = ranges[name]
+        buffer .+= Z_dict[name] * solutions[rng]
+    end
+    return buffer
 end
