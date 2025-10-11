@@ -64,7 +64,7 @@ function compute_relationship_matrix(dm::DataManager; type::Symbol=:pedigree, kw
         dm.H_inv_matrix = isempty(keys(h_kwargs)) ? compute_H_matrix_inv(dm) : compute_H_matrix_inv(dm; h_kwargs...)
         return dm.H_inv_matrix
     else
-        error("不支持的关系矩阵类型: $type")
+        error("不支持的关系矩阵类型: $(type)")
     end
 end
 

@@ -125,7 +125,7 @@ function setup_mme(X::Matrix{Float64}, Z_dict::Dict{String,SparseMatrixCSC{Float
             end
             penalty = relationship_inv_cache
             if size(penalty, 1) != dim
-                error("关系矩阵维度 ($(size(penalty,1))) 与随机效应 '$name' 维度 ($dim) 不一致。")
+                error("关系矩阵维度 ($(size(penalty,1))) 与随机效应 '$(name)' 维度 ($(dim)) 不一致。")
             end
             C[start_idx:end_idx, start_idx:end_idx] += lambda .* penalty
         end

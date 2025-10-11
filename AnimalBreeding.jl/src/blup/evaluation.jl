@@ -30,7 +30,7 @@ function run_evaluation(model::ModelSpec, dm::DataManager;
 
     @info "="^70
     @info "开始遗传评估分析"
-    @info "方法: $method"
+    @info "方法: $(method)"
     @info "="^70
 
     if isempty(dm.animal_map)
@@ -126,7 +126,7 @@ end
 将评估结果保存到文件。
 """
 function save_results(result::GeneticEvalResult, filepath::String)
-    @info "保存结果到: $filepath"
+    @info "保存结果到: $(filepath)"
     output_df = leftjoin(result.breeding_values, result.reliability, on=:animal_id)
     CSV.write(filepath, output_df)
     @info "结果已保存。"

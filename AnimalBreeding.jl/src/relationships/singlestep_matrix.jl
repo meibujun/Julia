@@ -40,7 +40,7 @@ function compute_H_matrix_inv(dm::DataManager; blending_factor::Float64=0.05,
         if idx > 0
             push!(genotyped_idx, idx)
         else
-            @warn "基因型中的个体 $id 未在谱系中找到，将被忽略。"
+            @warn "基因型中的个体 $(id) 未在谱系中找到，将被忽略。"
         end
     end
 
@@ -51,7 +51,7 @@ function compute_H_matrix_inv(dm::DataManager; blending_factor::Float64=0.05,
         return dm.A_inv_matrix
     end
 
-    @info "  总个体数: $n_total, 基因分型个体数: $n_genotyped"
+    @info "  总个体数: $(n_total), 基因分型个体数: $(n_genotyped)"
 
     A22 = dm.A_matrix[genotyped_idx, genotyped_idx]
     A22_inv = inv(Matrix(A22))

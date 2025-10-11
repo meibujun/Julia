@@ -76,7 +76,7 @@ function define_model(;
         elseif r isa RandomEffect
             push!(random_effects, r)
         else
-            error("无效的随机效应定义: $r。应为 (名称::String, 类型::Symbol) 元组或 RandomEffect 对象。")
+            error("无效的随机效应定义: $(r)。应为 (名称::String, 类型::Symbol) 元组或 RandomEffect 对象。")
         end
     end
 

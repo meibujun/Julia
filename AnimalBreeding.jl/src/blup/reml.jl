@@ -47,7 +47,7 @@ function estimate_variances_reml(
     tol::Float64=1e-6,
     relaxation_param::Float64=0.7
 )
-    @info "开始REML方差组分估计 (max_iter=$max_iter, tol=$tol, relaxation=$relaxation_param)..."
+    @info "开始REML方差组分估计 (max_iter=$(max_iter), tol=$(tol), relaxation=$(relaxation_param))..."
 
     if isempty(model.random_effects)
         error("REML估计需要至少一个随机效应。")
@@ -64,7 +64,7 @@ function estimate_variances_reml(
         variances[effect.name] = total_variance * 0.4 / n_random
     end
 
-    @info "初始方差组分: " * join(["$k=$(round(v, digits=4))" for (k,v) in variances], ", ")
+    @info "初始方差组分: " * join(["$(k)=$(round(v, digits=4))" for (k,v) in variances], ", ")
 
     ranges = _random_effect_ranges(model, Z_dict, n_fixed)
     random_offsets = zeros(Float64, n_obs)
@@ -120,7 +120,7 @@ function estimate_variances_reml(
 
         if max_rel_change < tol
             finish!(p)
-            @info "REML在第 $iter 次迭代后收敛。"
+            @info "REML在第 $(iter) 次迭代后收敛。"
             for (k, v) in variances_new
                 variances[k] = v
             end
@@ -135,6 +135,6 @@ function estimate_variances_reml(
         end
     end
 
-    @warn "REML在 $max_iter 次迭代后未收敛。"
+    @warn "REML在 $(max_iter) 次迭代后未收敛。"
     return REMLResult(variances, 0.0, max_iter, false)
 end

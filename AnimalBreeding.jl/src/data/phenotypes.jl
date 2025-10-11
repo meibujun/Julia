@@ -34,7 +34,7 @@ function load_phenotypes(filepath::String;
                         fixed_cols::Vector{String}=String[],
                         na_strings::Vector{String}=["NA", "na", "."])
 
-    @info "加载表型数据: $filepath"
+    @info "加载表型数据: $(filepath)"
 
     phenotypes = CSV.read(filepath, DataFrame, missingstring=na_strings)
 
@@ -65,7 +65,7 @@ function load_phenotypes(filepath::String;
     all_specified_cols = vcat("animal", trait_cols, fixed_cols)
     for col in all_specified_cols
         if !(col in names(phenotypes))
-            error("指定的列 '$col' 在表型文件中不存在。")
+            error("指定的列 '$(col)' 在表型文件中不存在。")
         end
     end
 
@@ -77,9 +77,9 @@ function load_phenotypes(filepath::String;
     for trait in trait_cols
         n_missing = sum(ismissing.(phenotypes[!, trait]))
         missing_pct = round(n_missing / n_records * 100, digits=1)
-        println("    - 性状 '$trait': $n_missing / $n_records ($missing_pct%) 条记录缺失。")
+        println("    - 性状 '$(trait)': $(n_missing) / $(n_records) ($(missing_pct)%) 条记录缺失。")
     end
 
-    @info "成功加载 $n_records 条记录, 包含 $n_traits 个性状。"
+    @info "成功加载 $(n_records) 条记录, 包含 $(n_traits) 个性状。"
     return phenotypes
 end

@@ -21,7 +21,7 @@ pedigree_df = load_pedigree("data/pedigree.csv")
 ```
 """
 function load_pedigree(filepath::String; validate::Bool=true)
-    @info "加载谱系数据: $filepath"
+    @info "加载谱系数据: $(filepath)"
 
     pedigree = CSV.read(filepath, DataFrame)
 
@@ -35,7 +35,7 @@ function load_pedigree(filepath::String; validate::Bool=true)
     for (std_name, aliases) in required_cols
         col_found = findfirst(name -> name in names(pedigree), aliases)
         if isnothing(col_found)
-            error("谱系文件 '$filepath' 缺少必需列: $(first(aliases))")
+            error("谱系文件 '$(filepath)' 缺少必需列: $(first(aliases))")
         end
         rename_map[aliases[col_found]] = String(std_name)
     end
@@ -153,7 +153,7 @@ function validate_pedigree(pedigree::DataFrame)
         end
     end
     if missing_parents > 0
-        @warn "发现 $missing_parents 个父母ID不在动物列表中。将在矩阵构建时自动补全。"
+        @warn "发现 $(missing_parents) 个父母ID不在动物列表中。将在矩阵构建时自动补全。"
     end
 
     # 检查环路

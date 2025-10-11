@@ -17,7 +17,7 @@
 - `DataFrame`: 包含基因型数据的数据框，第一列应为动物ID。
 """
 function load_genotypes(filepath::String; format::Symbol=:csv, quality_control::Bool=true)
-    @info "加载基因型数据: $filepath (格式: $format)"
+    @info "加载基因型数据: $(filepath) (格式: $(format))"
 
     if format == :csv
         genotypes = CSV.read(filepath, DataFrame)
@@ -25,14 +25,14 @@ function load_genotypes(filepath::String; format::Symbol=:csv, quality_control::
         # 标准化动物ID列名
         id_col_name = names(genotypes)[1]
         if !(id_col_name in ["animal_id", "id", "animal"])
-            @warn "将基因型文件的第一列 '$id_col_name' 视为动物ID。"
+            @warn "将基因型文件的第一列 '$(id_col_name)' 视为动物ID。"
         end
         rename!(genotypes, id_col_name => "animal_id")
 
         n_animals = nrow(genotypes)
         n_markers = ncol(genotypes) - 1
 
-        @info "成功加载 $n_animals 个个体的 $n_markers 个SNP标记。"
+        @info "成功加载 $(n_animals) 个个体的 $(n_markers) 个SNP标记。"
 
         if quality_control
             genotypes = perform_genotype_qc(genotypes)
@@ -40,7 +40,7 @@ function load_genotypes(filepath::String; format::Symbol=:csv, quality_control::
 
         return genotypes
     else
-        error("不支持的基因型文件格式: $format")
+        error("不支持的基因型文件格式: $(format)")
     end
 end
 
@@ -68,7 +68,7 @@ function perform_genotype_qc(genotypes::DataFrame;
                             min_maf::Float64=0.01,
                             min_call_rate::Float64=0.90)
 
-    @info "执行基因型质量控制 (MAF > $min_maf, Call Rate > $min_call_rate)..."
+    @info "执行基因型质量控制 (MAF > $(min_maf), Call Rate > $(min_call_rate))..."
 
     n_markers_before = ncol(genotypes) - 1
 
@@ -101,7 +101,7 @@ function perform_genotype_qc(genotypes::DataFrame;
     n_removed = n_markers_before - n_markers_after
 
     if n_removed > 0
-        @info "移除了 $n_removed 个不符合质量控制标准的标记。"
+        @info "移除了 $(n_removed) 个不符合质量控制标准的标记。"
 
         # +2 是因为第一列是ID，而markers_to_keep的索引是从1开始的
         indices_to_keep = [1; findall(markers_to_keep) .+ 1]
