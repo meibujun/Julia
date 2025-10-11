@@ -38,6 +38,7 @@ include("data/pedigree.jl")
 include("data/genotypes.jl")
 include("data/phenotypes.jl")
 include("data/validation.jl")
+include("data/simulation.jl")
 
 # --- 关系矩阵 ---
 include("relationships/pedigree_matrix.jl")
@@ -72,6 +73,7 @@ export DataManager,
        compute_G_matrix,
        compute_H_matrix_inv,
        compute_relationship_matrix,
+       simulate_complete_dataset,
        build_design_matrices,
        setup_mme,
        solve_mme,
