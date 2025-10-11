@@ -20,7 +20,7 @@ module AnimalBreeding
 # 3. 方便利用预编译缓存提高性能。
 # ============================================================================
 using LinearAlgebra, SparseArrays, Statistics
-using DataFrames, CSV, ProgressMeter, Printf, Dates
+using DataFrames, CSV, ProgressMeter, Printf
 
 # ============================================================================
 # 子模块包含 (按照功能分层加载)
