@@ -100,8 +100,7 @@ function _topological_sort_pedigree(pedigree::DataFrame)
         end
     end
 
-    queue = Vector{Int}(filter(id -> indegree[id] == 0, keys(indegree)))
-    sort!(queue)
+    queue = sort!(collect(id for id in keys(indegree) if indegree[id] == 0))
     order = Int[]
 
     while !isempty(queue)
