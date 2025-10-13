@@ -28,6 +28,9 @@ using LinearAlgebra
     dm.pedigree = ped_df
     dm.genotypes = gen_df
 
+    @test AnimalBreeding.nrow(dm.pedigree) == nrow(dm.pedigree)
+    @test AnimalBreeding.nrow === DataFrames.nrow
+
     @testset "统一接口计算关系矩阵" begin
         # 计算并缓存 A 与 A⁻¹
         compute_relationship_matrix(dm, type=:pedigree, compute_inverse=true)
