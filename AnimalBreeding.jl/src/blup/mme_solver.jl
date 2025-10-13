@@ -150,13 +150,36 @@ function solve_mme(C::SparseMatrixCSC, rhs::Vector{Float64})
 end
 
 function _relationship_inverse(dm::DataManager)
+    # 优先尝试构建谱系逆矩阵，必要时回退到单步矩阵
+    if isnothing(dm.A_inv_matrix) && !isnothing(dm.pedigree)
+        @info "未检测到A⁻¹，自动根据谱系计算逆关系矩阵。"
+        compute_relationship_matrix(dm; type=:pedigree_inv)
+    end
+
+    # 若提供了单步所需的信息，则尝试构建H⁻¹ 以便后续缓存复用
+    if isnothing(dm.H_inv_matrix) && !isnothing(dm.G_matrix) &&
+       !isnothing(dm.A_inv_matrix) && !isnothing(dm.A_matrix)
+        try
+            @info "检测到G矩阵与谱系逆矩阵，自动计算H⁻¹ 用于单步评估。"
+            compute_relationship_matrix(dm; type=:singlestep)
+        catch err
+            @warn "自动计算H⁻¹失败，将继续使用A⁻¹。" err
+        end
+    end
+
     if !isnothing(dm.H_inv_matrix)
         return SparseMatrixCSC(dm.H_inv_matrix)
     elseif !isnothing(dm.A_inv_matrix)
         return SparseMatrixCSC(dm.A_inv_matrix)
-    else
-        error("模型需要A⁻¹或H⁻¹，但未在DataManager中计算。")
     end
+
+    missing_components = String[]
+    isnothing(dm.pedigree) && push!(missing_components, "谱系数据")
+    isnothing(dm.A_inv_matrix) && push!(missing_components, "A⁻¹")
+    isnothing(dm.H_inv_matrix) && push!(missing_components, "H⁻¹")
+
+    error("模型需要A⁻¹或H⁻¹，但当前DataManager缺少: $(join(missing_components, "、"))。" *
+          "请先加载必要的数据并调用 compute_relationship_matrix 生成所需矩阵。")
 end
 
 function _random_effect_ranges(model::ModelSpec, Z_dict::Dict{String,SparseMatrixCSC{Float64,Int}}, n_fixed::Int)
