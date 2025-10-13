@@ -40,11 +40,15 @@ mutable struct ModelSpec
     fixed_effects::Vector{String}
     random_effects::Vector{RandomEffect}
 
-    function ModelSpec(;
+    function ModelSpec(; 
                       traits::Vector{String}=String[],
                       fixed::Vector{String}=String[],
-                      random::Vector{RandomEffect}=RandomEffect[])
-        new(traits, fixed, random)
+                      fixed_effects::Union{Nothing,Vector{String}}=nothing,
+                      random::Vector{RandomEffect}=RandomEffect[],
+                      random_effects::Union{Nothing,Vector{RandomEffect}}=nothing)
+        fixed_vals = isnothing(fixed_effects) ? fixed : fixed_effects
+        random_vals = isnothing(random_effects) ? random : random_effects
+        new(traits, fixed_vals, random_vals)
     end
 end
 
@@ -82,7 +86,7 @@ function define_model(;
 
     model = ModelSpec(
         traits=traits,
-        fixed_effects=fixed,
+        fixed=fixed,
         random=random_effects
     )
 

@@ -18,3 +18,16 @@ using AnimalBreeding
 
     @test_throws ErrorException define_model(random=[(:invalid,)])
 end
+
+@testset "ModelSpec 构造函数兼容性" begin
+    fixed = ["herd", "year"]
+    random = [RandomEffect("animal", :additive)]
+
+    legacy = ModelSpec(traits=["milk"], fixed_effects=fixed, random=random)
+    modern = ModelSpec(traits=["milk"], fixed=fixed, random_effects=random)
+
+    @test legacy.fixed_effects == fixed
+    @test legacy.random_effects == random
+    @test modern.fixed_effects == fixed
+    @test modern.random_effects == random
+end
