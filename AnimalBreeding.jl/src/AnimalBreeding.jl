@@ -51,6 +51,9 @@ include("blup/mme_solver.jl")
 include("blup/reml.jl")
 include("blup/evaluation.jl")
 
+# --- 育种规划与优化 ---
+include("selection/ocs.jl")
+
 # ============================================================================
 # 模块导出 (公共API)
 # ----------------------------------------------------------------------------
@@ -79,6 +82,7 @@ export DataManager,
        solve_mme,
        estimate_variances_reml,
        run_evaluation,
-       save_results
+       save_results,
+       optimal_contribution_selection
 
 end # module AnimalBreeding
