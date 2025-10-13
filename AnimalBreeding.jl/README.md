@@ -92,9 +92,12 @@ result = run_evaluation(model, dm, method=:GBLUP, h2=0.3);
 # 5. 查看结果摘要
 println(result)
 
-# 6. 保存育种值
-save_results(result, dm, "gblup_breeding_values.csv");
+# 6. 保存育种值（合并谱系信息）
+save_results(result, dm, "gblup_breeding_values.csv"; include_pedigree=true);
 ```
+
+> ℹ️ `save_results(result, dm, path; include_pedigree=true, include_phenotypes=false)`
+> 会自动拼接 DataManager 中的谱系或首条表型记录，便于下游分析。
 
 ### 高级功能示例: 育种规划
 

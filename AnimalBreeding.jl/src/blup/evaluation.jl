@@ -121,13 +121,85 @@ function Base.show(io::IO, result::GeneticEvalResult)
 end
 
 """
-    save_results(result::GeneticEvalResult, filepath::String)
+    _assemble_result_dataframe(result::GeneticEvalResult)
+
+内部辅助函数：基于评估结果构造包含育种值与可靠性的基本数据表。
+"""
+function _assemble_result_dataframe(result::GeneticEvalResult)
+    return leftjoin(copy(result.breeding_values), result.reliability, on=:animal_id)
+end
+
+"""
+    save_results(result::GeneticEvalResult, filepath::AbstractString)
 
 将评估结果保存到文件。
 """
-function save_results(result::GeneticEvalResult, filepath::String)
+function save_results(result::GeneticEvalResult, filepath::AbstractString)
     @info "保存结果到: $(filepath)"
-    output_df = leftjoin(result.breeding_values, result.reliability, on=:animal_id)
+    output_df = _assemble_result_dataframe(result)
     CSV.write(filepath, output_df)
     @info "结果已保存。"
+    return filepath
+end
+
+"""
+    save_results(result::GeneticEvalResult, dm::DataManager, filepath::AbstractString;
+                 include_pedigree::Bool=true,
+                 include_phenotypes::Bool=false)
+
+将评估结果与数据管理器中的谱系 / 表型信息合并后保存至文件。
+
+# 参数
+- `result`: `run_evaluation` 的返回结果。
+- `dm`: 包含谱系、表型等上下文信息的 `DataManager`。
+- `filepath`: 输出文件路径。
+- `include_pedigree`: 若为 `true`，则在结果中附加父母信息。
+- `include_phenotypes`: 若为 `true`，则合并每个个体的首条表型记录。
+"""
+function save_results(result::GeneticEvalResult,
+                      dm::DataManager,
+                      filepath::AbstractString;
+                      include_pedigree::Bool=true,
+                      include_phenotypes::Bool=false)
+    @info "保存结果到: $(filepath)"
+
+    output_df = _assemble_result_dataframe(result)
+
+    if include_pedigree && !isnothing(dm.pedigree)
+        pedigree_df = copy(dm.pedigree)
+        if :animal in names(pedigree_df)
+            rename!(pedigree_df, :animal => :animal_id)
+        elseif !(:animal_id in names(pedigree_df))
+            pedigree_df = nothing
+        end
+
+        if pedigree_df !== nothing
+            keep_cols = [:animal_id]
+            for col in (:sire, :dam)
+                if col in names(pedigree_df)
+                    push!(keep_cols, col)
+                end
+            end
+            select!(pedigree_df, keep_cols; copycols=false)
+            output_df = leftjoin(output_df, pedigree_df, on=:animal_id, makeunique=true)
+        end
+    end
+
+    if include_phenotypes && !isnothing(dm.phenotypes)
+        pheno_df = copy(dm.phenotypes)
+        if :animal in names(pheno_df)
+            rename!(pheno_df, :animal => :animal_id)
+        elseif !(:animal_id in names(pheno_df))
+            pheno_df = nothing
+        end
+
+        if pheno_df !== nothing
+            pheno_df = unique(pheno_df, on=:animal_id)
+            output_df = leftjoin(output_df, pheno_df, on=:animal_id, makeunique=true)
+        end
+    end
+
+    CSV.write(filepath, output_df)
+    @info "结果已保存。"
+    return filepath
 end
