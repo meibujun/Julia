@@ -29,7 +29,7 @@ using LinearAlgebra
     dm.genotypes = gen_df
 
     @test AnimalBreeding.nrow(dm.pedigree) == nrow(dm.pedigree)
-    @test AnimalBreeding.nrow === DataFrames.nrow
+    @test AnimalBreeding.nrow(dm.pedigree) == DataFrames.nrow(dm.pedigree)
 
     @testset "统一接口计算关系矩阵" begin
         # 计算并缓存 A 与 A⁻¹

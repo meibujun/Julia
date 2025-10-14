@@ -21,14 +21,24 @@ module AnimalBreeding
 # ============================================================================
 using LinearAlgebra, SparseArrays, Statistics
 using DataFrames, CSV, ProgressMeter, Printf
-import DataFrames: nrow
 
 # 引入并在导出列表中重新导出常用的 DataFrames.nrow，方便用户直接使用
 # 在 Julia 中，`import DataFrames: nrow` 只会为该名称创建一个绑定，
 # 但为了确保在预编译和运行阶段都能稳定地重导出该函数，我们显式
 # 将其绑定为常量指向原始实现。这样既不会复制函数，又避免在某些
 # 环境中出现 `UndefVarError` 的情况。
-const nrow = DataFrames.nrow
+const _df_nrow = DataFrames.nrow
+
+"""
+    nrow(table) -> Int
+
+Return the number of rows in a table-like object.  This is a thin wrapper
+around `DataFrames.nrow` that is re-exported so users can access it directly
+via `using AnimalBreeding` without having to depend on DataFrames explicitly.
+"""
+@inline function nrow(args...; kwargs...)
+    _df_nrow(args...; kwargs...)
+end
 
 # ============================================================================
 # 子模块包含 (按照功能分层加载)
