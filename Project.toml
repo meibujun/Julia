@@ -1,0 +1,32 @@
+name = "RareEpistasisMeta"
+uuid = "9e1d0f68-7a3b-11ef-b446-1f1cf4d0f8f2"
+authors = ["OpenAI Assistant <assistant@example.com>"]
+version = "0.1.0"
+
+[deps]
+CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
+CodecZlib = "944b1d66-785c-5afd-91f1-9de20f533193"
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
+Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+ProgressLogging = "33c8b6b6-d38a-422a-b730-caa89a2f386c"
+Random = "9a3f8284-686f-5f34-9a6c-12f62f923ecc"
+Serialization = "9e88b42a-f829-5b0c-bbe9-9e923198166b"
+SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
+StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
+StatsModels = "3eaba693-59b7-5ba5-a881-562e759f1c8d"
+Tables = "bd369af6-aec1-5ad0-b16a-5d0d1b3f3a91"
+TOML = "191fdcea-1f6d-5a41-bde1-b0d96a1bdb0d"
+TranscodingStreams = "3bb67fe8-82b1-5028-8e26-92a6c54297fa"
+XGBoost = "009559a3-9522-5dbb-924b-0b6ed2b1118d"
+
+[compat]
+julia = "1.11"
+CSV = "0.10"
+DataFrames = "1"
+Distributions = "0.25"
+ProgressLogging = "0.1"
+StatsBase = "0.34"
+StatsModels = "0.6"
+Tables = "1"
+XGBoost = "2"
