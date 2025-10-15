@@ -10,7 +10,6 @@ using Serialization
 using LinearAlgebra
 using SparseArrays
 using ProgressLogging
-using StatsBase: mode
 
 const SUPPORTED_EXT = (".vcf", ".vcf.gz", ".bed", ".bim", ".fam", ".csv")
 
@@ -123,26 +122,52 @@ function parse_gt(gt_field::AbstractString, gt_index::Int)
 end
 
 function impute_missing!(G::AbstractMatrix{<:Real}; method::Symbol=:mean)
-    for j in axes(G, 2)
+    @inbounds for j in axes(G, 2)
         column = view(G, :, j)
-        valid = filter(!isnan, column)
-        if isempty(valid)
-            column .= 0
-            continue
-        end
-        if method == :mean
-            μ = mean(valid)
-            replace!(column, x -> isnan(x) ? μ : x)
-        elseif method == :mode
-            μ = mode(valid)
-            replace!(column, x -> isnan(x) ? μ : x)
-        elseif method == :zero
-            replace!(column, x -> isnan(x) ? 0 : x)
-        else
-            error("未知填补方法: $method")
+        replacement = replacement_value(column, method)
+        for idx in eachindex(column)
+            if isnan(column[idx])
+                column[idx] = replacement
+            end
         end
     end
     return G
+end
+
+function replacement_value(column, method::Symbol)
+    if method === :zero
+        return zero(eltype(column))
+    elseif method === :mean
+        T = promote_type(eltype(column), Float64)
+        total = zero(T)
+        count = 0
+        for val in column
+            if !isnan(val)
+                total += val
+                count += 1
+            end
+        end
+        return count == 0 ? zero(T) : total / count
+    elseif method === :mode
+        T = promote_type(eltype(column), Float64)
+        best_val = zero(T)
+        best_count = -1
+        counts = Dict{T,Int}()
+        for val in column
+            if isnan(val)
+                continue
+            end
+            cnt = get!(counts, T(val), 0) + 1
+            counts[T(val)] = cnt
+            if cnt > best_count || (cnt == best_count && T(val) < best_val)
+                best_val = T(val)
+                best_count = cnt
+            end
+        end
+        return best_count <= 0 ? zero(T) : best_val
+    else
+        error("未知填补方法: $method")
+    end
 end
 
 function read_bed!(dest::AbstractMatrix{Float64}, path::AbstractString)

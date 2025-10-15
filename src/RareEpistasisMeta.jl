@@ -42,6 +42,14 @@ export load_genotypes, load_phenotypes, load_covariates,
        qc_filter_variants!, qc_filter_samples!,
        collapsing_test, bayesian_mvr!, rkhs_epistasis!, egblup!,
        meta_analyze, summarize_results, save_report,
-       simulate_genotype_matrix, simulate_phenotypes
+       simulate_genotype_matrix, simulate_phenotypes,
+       sample
+
+@doc """
+    sample(args...; kwargs...)
+
+封装并重导出 `StatsBase.sample`，用于在分析流程中执行带或不带权重的高性能抽样操作，
+便于在 HPC 场景下快速构建交叉验证折叠、Bootstrap 样本等随机子集。
+""" sample
 
 end # module

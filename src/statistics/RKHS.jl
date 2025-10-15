@@ -29,7 +29,7 @@ function compute_kernel(G::AbstractMatrix; kernel::Symbol, degree::Int)
         return (G * G') .^ degree
     elseif kernel == :rbf
         dists = pairwise_squared_dist(G)
-        γ = 1 / median(dists)
+        γ = rbf_gamma(dists)
         return exp.(-γ .* dists)
     elseif kernel == :spectral
         U, S, _ = svd(G)
@@ -41,7 +41,21 @@ end
 
 function pairwise_squared_dist(G::AbstractMatrix)
     norms = sum(abs2, G; dims = 2)
-    return norms .+ norms' .- 2 * (G * G')
+    d = norms .+ norms' .- 2 * (G * G')
+    return max.(d, 0.0)
+end
+
+function rbf_gamma(dists::AbstractMatrix{<:Real})
+    total = 0.0
+    count = 0
+    for val in dists
+        if val > 0
+            total += val
+            count += 1
+        end
+    end
+    scale = count == 0 ? 1.0 : total / count
+    return 1 / max(scale, eps())
 end
 
 end # module
