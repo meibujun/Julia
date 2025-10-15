@@ -1,0 +1,4 @@
+sample_id,snp1,snp2,snp3
+sample1,0,1,2
+sample2,1,2,0
+sample3,2,0,1
