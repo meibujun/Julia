@@ -23,25 +23,43 @@ include("data/Formats.jl")
 include("preprocessing/QualityControl.jl")
 include("statistics/Collapsing.jl")
 include("statistics/BayesianMVR.jl")
+include("statistics/EpistasisModels.jl")
 include("statistics/RKHS.jl")
 include("statistics/EGBLUP.jl")
 include("statistics/MetaAnalysis.jl")
+include("omics/Integration.jl")
+include("applications/BreedingPrograms.jl")
+include("applications/LLMAssist.jl")
 include("io/Reporting.jl")
+include("visualization/Visualization.jl")
 
-using .utils.MathUtils: simulate_genotype_matrix, simulate_phenotypes
-using .data.Formats: load_genotypes, load_phenotypes, load_covariates
-using .preprocessing.QualityControl: qc_filter_variants!, qc_filter_samples!
-using .statistics.Collapsing: collapsing_test
-using .statistics.BayesianMVR: bayesian_mvr!
-using .statistics.RKHS: rkhs_epistasis!
-using .statistics.EGBLUP: egblup!
-using .statistics.MetaAnalysis: meta_analyze, summarize_results
-using .io.Reporting: save_report
+using .MathUtils: simulate_genotype_matrix, simulate_phenotypes
+using .Formats: load_genotypes, load_phenotypes, load_covariates
+using .QualityControl: qc_filter_variants!, qc_filter_samples!
+using .Collapsing: collapsing_test, list_rvat_methods
+using .BayesianMVR: bayesian_mvr!, bayesian_blasso!, bayesian_bayesb!
+using .EpistasisModels: epistasis_scan, list_epistasis_methods
+using .RKHS: rkhs_epistasis!
+using .EGBLUP: egblup!
+using .MetaAnalysis: meta_analyze, summarize_results, list_meta_models
+using .Integration: simulate_multiomics, integrate_multiomics!, omics_kernel
+using .BreedingPrograms: simulate_breeding_pipeline, optimize_breeding_scheme
+using .LLMAssist: configure_llm!, llm_explain_results, llm_rank_candidate_genes, llm_optimize_scheme
+using .Reporting: save_report
+using .Visualization: manhattan_plot, qq_plot, forest_plot, network_plot, save_plot
 
 export load_genotypes, load_phenotypes, load_covariates,
        qc_filter_variants!, qc_filter_samples!,
-       collapsing_test, bayesian_mvr!, rkhs_epistasis!, egblup!,
-       meta_analyze, summarize_results, save_report,
+       collapsing_test, list_rvat_methods,
+       bayesian_mvr!, bayesian_blasso!, bayesian_bayesb!,
+       rkhs_epistasis!, egblup!,
+       epistasis_scan, list_epistasis_methods,
+       meta_analyze, summarize_results, list_meta_models,
+       simulate_multiomics, integrate_multiomics!, omics_kernel,
+       simulate_breeding_pipeline, optimize_breeding_scheme,
+       configure_llm!, llm_explain_results, llm_rank_candidate_genes, llm_optimize_scheme,
+       manhattan_plot, qq_plot, forest_plot, network_plot, save_plot,
+       save_report,
        simulate_genotype_matrix, simulate_phenotypes,
        sample
 
