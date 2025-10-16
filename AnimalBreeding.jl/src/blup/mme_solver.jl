@@ -21,7 +21,35 @@ function build_design_matrices(phenotypes::DataFrame, model::ModelSpec, animal_m
     end
 
     trait = model.traits[1]
-    pheno_clean = phenotypes[.!ismissing.(phenotypes[!, trait]), :]
+    if !(trait in names(phenotypes))
+        error("表型数据中不存在性状列 '$trait'。")
+    end
+
+    required_cols = Set{String}([trait, "animal"])
+    for effect_name in model.fixed_effects
+        push!(required_cols, effect_name)
+    end
+
+    for col in required_cols
+        if !(col in names(phenotypes))
+            error("表型数据缺少构建设计矩阵所需的列 '$col'。")
+        end
+    end
+
+    mask = .!ismissing.(phenotypes[!, trait])
+    for col in required_cols
+        mask .&= .!ismissing.(phenotypes[!, col])
+    end
+
+    kept = count(mask)
+    dropped = nrow(phenotypes) - kept
+    if kept == 0
+        error("构建设计矩阵所需的记录全部缺失，无法继续。")
+    elseif dropped > 0
+        @warn "因缺失值移除了 $dropped 条记录以构建设计矩阵。"
+    end
+
+    pheno_clean = phenotypes[mask, :]
     y = Float64.(pheno_clean[!, trait])
     n_obs = length(y)
 
@@ -35,7 +63,8 @@ function build_design_matrices(phenotypes::DataFrame, model::ModelSpec, animal_m
             levels = unique(column)
             if length(levels) > 1
                 for level in levels[2:end]
-                    push!(X_cols, Float64.(column .== level))
+                    indicators = column .== level
+                    push!(X_cols, Float64.(indicators))
                 end
             end
         end
@@ -85,6 +114,49 @@ function build_design_matrices(phenotypes::DataFrame, model::ModelSpec, animal_m
     return X, Z_dict, y
 end
 
+const _RandomEffectBlock = NamedTuple{(:effect, :range), Tuple{RandomEffect, UnitRange{Int}}}
+
+function _included_random_effects(model::ModelSpec,
+                                  Z_dict::Dict{String,SparseMatrixCSC{Float64, Int}})
+    included = RandomEffect[]
+    skipped = String[]
+    for effect in model.random_effects
+        if haskey(Z_dict, effect.name)
+            push!(included, effect)
+        else
+            push!(skipped, effect.name)
+        end
+    end
+    if !isempty(skipped)
+        @warn "以下随机效应缺少设计矩阵，将在MME中忽略: " * join(skipped, ", ")
+    end
+    return included
+end
+
+function _random_effect_blocks(n_fixed::Int,
+                               effects::Vector{RandomEffect},
+                               Z_dict::Dict{String,SparseMatrixCSC{Float64, Int}})
+    blocks = _RandomEffectBlock[]
+    current = n_fixed
+    for effect in effects
+        dim = size(Z_dict[effect.name], 2)
+        range = current + 1:current + dim
+        push!(blocks, (effect=effect, range=range))
+        current += dim
+    end
+    return blocks
+end
+
+function _relationship_inverse_matrix(dm::DataManager)
+    if !isnothing(dm.H_inv_matrix)
+        return Matrix(dm.H_inv_matrix)
+    elseif !isnothing(dm.A_inv_matrix)
+        return Matrix(dm.A_inv_matrix)
+    else
+        error("模型需要A⁻¹或H⁻¹，但未在DataManager中计算。")
+    end
+end
+
 """
     setup_mme(X, Z_dict, y, dm, model, variances) -> (SparseMatrixCSC, Vector)
 
@@ -96,7 +168,8 @@ function setup_mme(X::Matrix{Float64}, Z_dict::Dict{String,SparseMatrixCSC{Float
     @info "构建混合模型方程 (MME)..."
 
     n_fixed = size(X, 2)
-    n_random = sum(size(Z, 2) for Z in values(Z_dict))
+    included_effects = _included_random_effects(model, Z_dict)
+    n_random = sum(size(Z_dict[effect.name], 2) for effect in included_effects)
     n_total = n_fixed + n_random
 
     C = spzeros(n_total, n_total)
@@ -108,33 +181,31 @@ function setup_mme(X::Matrix{Float64}, Z_dict::Dict{String,SparseMatrixCSC{Float
     C[1:n_fixed, 1:n_fixed] = (X' * X) .* R_inv_val
     rhs[1:n_fixed] = (X' * y) .* R_inv_val
 
-    current_pos = n_fixed
-    for effect in model.random_effects
-        name = effect.name
-        Z = Z_dict[name]
-        dim = size(Z, 2)
-        start_idx = current_pos + 1
-        end_idx = current_pos + dim
+    relationship_inv = nothing
+    blocks = _random_effect_blocks(n_fixed, included_effects, Z_dict)
+    for block in blocks
+        effect = block.effect
+        range = block.range
+        Z = Z_dict[effect.name]
 
         XtZ = X' * Z
-        C[1:n_fixed, start_idx:end_idx] = XtZ .* R_inv_val
-        C[start_idx:end_idx, 1:n_fixed] = XtZ' .* R_inv_val
+        C[1:n_fixed, range] = XtZ .* R_inv_val
+        C[range, 1:n_fixed] = XtZ' .* R_inv_val
 
-        C[ start_idx:end_idx, start_idx:end_idx] = (Z' * Z) .* R_inv_val
+        C[range, range] = (Z' * Z) .* R_inv_val
 
         if effect.type == :additive
-            lambda = sigma2_e / variances[name]
-            if !isnothing(dm.H_inv_matrix)
-                C[start_idx:end_idx, start_idx:end_idx] += lambda .* Matrix(dm.H_inv_matrix)
-            elseif !isnothing(dm.A_inv_matrix)
-                C[start_idx:end_idx, start_idx:end_idx] += lambda .* Matrix(dm.A_inv_matrix)
-            else
-                error("模型需要A⁻¹或H⁻¹，但未在DataManager中计算。")
+            if !haskey(variances, effect.name)
+                error("未提供随机效应 $(effect.name) 的方差估计，无法构建MME。")
             end
+            if isnothing(relationship_inv)
+                relationship_inv = _relationship_inverse_matrix(dm)
+            end
+            lambda = sigma2_e / variances[effect.name]
+            C[range, range] += lambda .* relationship_inv
         end
 
-        rhs[start_idx:end_idx] = (Z' * y) .* R_inv_val
-        current_pos += dim
+        rhs[range] = (Z' * y) .* R_inv_val
     end
 
     return C, rhs

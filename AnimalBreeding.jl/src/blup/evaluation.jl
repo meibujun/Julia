@@ -38,6 +38,8 @@ function run_evaluation(model::ModelSpec, dm::DataManager;
     end
 
     X, Z_dict, y = build_design_matrices(dm.phenotypes, model, dm.animal_map)
+    included_effects = _included_random_effects(model, Z_dict)
+    blocks = _random_effect_blocks(size(X, 2), included_effects, Z_dict)
 
     variances = Dict{String,Float64}()
     if estimate_variances
@@ -49,7 +51,7 @@ function run_evaluation(model::ModelSpec, dm::DataManager;
             @warn "未提供h2且未启用REML，使用默认值 h2=0.3"
         end
         total_var = var(y)
-        for effect in model.random_effects
+        for effect in included_effects
             if effect.type == :additive
                 variances[effect.name] = total_var * h2_val
             else
@@ -66,11 +68,8 @@ function run_evaluation(model::ModelSpec, dm::DataManager;
     fixed_effects = Dict("effects" => solutions[1:n_fixed])
 
     random_effect_values = Dict{String, Vector{Float64}}()
-    current_pos = n_fixed
-    for effect in model.random_effects
-        dim = size(Z_dict[effect.name], 2)
-        random_effect_values[effect.name] = solutions[current_pos+1:current_pos+dim]
-        current_pos += dim
+    for block in blocks
+        random_effect_values[block.effect.name] = solutions[block.range]
     end
 
     if isempty(random_effect_values)
@@ -84,13 +83,23 @@ function run_evaluation(model::ModelSpec, dm::DataManager;
 
         if haskey(random_effect_values, "animal")
             u = random_effect_values["animal"]
+            if length(u) == length(ordered_animals)
+                breeding_values_df = DataFrame(animal_id=ordered_animals, EBV=u)
+                reliability_df = DataFrame(animal_id=ordered_animals, reliability=zeros(length(u)))
+            else
+                @warn "随机效应 'animal' 的解向量长度与动物数量不一致，返回索引级结果。"
+                levels = collect(1:length(u))
+                labels = ["animal[$i]" for i in levels]
+                breeding_values_df = DataFrame(animal_id=labels, EBV=u)
+                reliability_df = DataFrame(animal_id=labels, reliability=zeros(length(u)))
+            end
         else
             first_key = first(keys(random_effect_values))
             u = random_effect_values[first_key]
+            labels = ["$(first_key)[$i]" for i in 1:length(u)]
+            breeding_values_df = DataFrame(animal_id=labels, EBV=u)
+            reliability_df = DataFrame(animal_id=labels, reliability=zeros(length(u)))
         end
-
-        breeding_values_df = DataFrame(animal_id=ordered_animals, EBV=u)
-        reliability_df = DataFrame(animal_id=ordered_animals, reliability=zeros(length(u)))
     end
 
     result = GeneticEvalResult(
