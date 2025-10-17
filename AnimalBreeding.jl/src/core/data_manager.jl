@@ -108,7 +108,11 @@ end
 - 如果只请求一个矩阵，直接返回该矩阵；
 - 如果请求多个矩阵（例如 `type=:all` 或向量类型），返回一个以类型为键的字典。
 """
-function compute_relationship_matrix(
+function compute_relationship_matrix(dm::DataManager; kwargs...)
+    return _compute_relationship_matrix!(dm; kwargs...)
+end
+
+function _compute_relationship_matrix!(
     dm::DataManager;
     type::Union{Symbol,AbstractString,AbstractVector{<:Union{Symbol,AbstractString}}}=:pedigree,
     kwargs...

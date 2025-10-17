@@ -32,6 +32,7 @@ using DataFrames, CSV, ProgressMeter, Printf, Dates
 # --- 核心模块 ---
 include("core/data_manager.jl")
 include("core/model_spec.jl")
+include("core/quickstart.jl")
 
 # --- 数据处理 ---
 include("data/pedigree.jl")
@@ -78,6 +79,7 @@ export DataManager,
        estimate_variances_reml,
        run_evaluation,
        save_results,
+       quickstart_gblup,
        simulate_complete_dataset
 
 end # module AnimalBreeding

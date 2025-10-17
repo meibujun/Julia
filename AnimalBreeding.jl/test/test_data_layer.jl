@@ -109,5 +109,13 @@ using LinearAlgebra
         @test !isnothing(dm_all.H_inv_matrix)
     end
 
+    @testset "快速入门流程" begin
+        result, dm_qs, params = quickstart_gblup(n_generations=2, n_per_generation=25, n_markers=150, h2=0.2)
+        @test isa(result.breeding_values, DataFrame)
+        @test isa(dm_qs, DataManager)
+        @test haskey(params, "phenotype")
+        @test !isempty(result.breeding_values)
+    end
+
     println("\n✓ 核心数据层测试通过。")
 end
