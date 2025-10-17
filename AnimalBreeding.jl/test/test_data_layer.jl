@@ -69,5 +69,45 @@ using LinearAlgebra
         @test dm.H_inv_matrix[genotyped_idx[1], genotyped_idx[1]] != dm.A_inv_matrix[genotyped_idx[1], genotyped_idx[1]]
     end
 
+    @testset "关系矩阵调度函数" begin
+        dm_dispatch = DataManager()
+        dm_dispatch.pedigree = deepcopy(ped_df)
+        dm_dispatch.genotypes = deepcopy(gen_df)
+
+        A_mat = compute_relationship_matrix(dm_dispatch, type=:pedigree)
+        @test dm_dispatch.A_matrix === A_mat
+        @test size(A_mat) == (5, 5)
+
+        A_inv_mat = compute_relationship_matrix(dm_dispatch, type=:pedigree_inverse)
+        @test dm_dispatch.A_inv_matrix === A_inv_mat
+        @test size(A_inv_mat) == (5, 5)
+
+        G_mat = compute_relationship_matrix(dm_dispatch, type=:genomic)
+        @test dm_dispatch.G_matrix === G_mat
+        @test size(G_mat, 1) == nrow(dm_dispatch.genotypes)
+
+        H_inv_mat = compute_relationship_matrix(dm_dispatch, type=:singlestep)
+        @test dm_dispatch.H_inv_matrix === H_inv_mat
+        @test size(H_inv_mat) == (5, 5)
+
+        dm_multi = DataManager()
+        dm_multi.pedigree = deepcopy(ped_df)
+        dm_multi.genotypes = deepcopy(gen_df)
+
+        matrices = compute_relationship_matrix(dm_multi, type=[:genomic, :pedigree])
+        @test isa(matrices, Dict)
+        @test :genomic in keys(matrices)
+        @test :pedigree in keys(matrices)
+
+        dm_all = DataManager()
+        dm_all.pedigree = deepcopy(ped_df)
+        dm_all.genotypes = deepcopy(gen_df)
+
+        all_results = compute_relationship_matrix(dm_all, type=:all)
+        @test isa(all_results, Dict)
+        @test Set(keys(all_results)) == Set([:pedigree, :pedigree_inverse, :genomic, :singlestep])
+        @test !isnothing(dm_all.H_inv_matrix)
+    end
+
     println("\n✓ 核心数据层测试通过。")
 end
