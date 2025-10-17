@@ -34,6 +34,10 @@ end
 - `traits::Vector{String}`: 一个或多个待分析的性状名称。
 - `fixed_effects::Vector{String}`: 模型中的固定效应列表。
 - `random_effects::Vector{RandomEffect}`: 模型中的随机效应列表，每个元素是一个`RandomEffect`对象。
+
+# 关键字参数
+- `fixed`: 固定效应列表，与 `fixed_effects` 等价，便于兼容旧代码。
+- `fixed_effects`: 固定效应列表，如与 `fixed` 同时提供则必须保持一致。
 """
 mutable struct ModelSpec
     traits::Vector{String}
@@ -43,8 +47,17 @@ mutable struct ModelSpec
     function ModelSpec(;
                       traits::Vector{String}=String[],
                       fixed::Vector{String}=String[],
+                      fixed_effects::Vector{String}=String[],
                       random::Vector{RandomEffect}=RandomEffect[])
-        new(traits, fixed, random)
+        final_fixed = if !isempty(fixed) && !isempty(fixed_effects) && fixed != fixed_effects
+            error("同时提供了 fixed 和 fixed_effects 但二者不一致。请仅使用其中一个关键字参数。")
+        elseif !isempty(fixed_effects)
+            fixed_effects
+        else
+            fixed
+        end
+
+        new(traits, final_fixed, random)
     end
 end
 
@@ -87,8 +100,8 @@ function define_model(;
 
     model = ModelSpec(
         traits=traits,
-        fixed_effects=fixed,
-        random=random_effects
+        fixed=fixed,
+        random=random_effects,
     )
 
     summary_msg = string(
