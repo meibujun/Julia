@@ -56,17 +56,29 @@ function build_design_matrices(phenotypes::DataFrame, model::ModelSpec, animal_m
     X_cols = [ones(Float64, n_obs)]
     for effect_name in model.fixed_effects
         column = pheno_clean[!, effect_name]
-        value_type = eltype(skipmissing(column))
-        if value_type <: Number
-            push!(X_cols, Float64.(column))
-        else
-            levels = unique(column)
-            if length(levels) > 1
-                for level in levels[2:end]
+        clean_col = collect(skipmissing(column))
+        unique_vals = unique(clean_col)
+        value_type = eltype(clean_col)
+
+        treat_as_categorical = !(value_type <: Number)
+        if !treat_as_categorical
+            # 对离散水平较少的数值列以分类变量处理，以避免与截距共线
+            # 同时兼容实际的连续协变量
+            n_unique = length(unique_vals)
+            threshold = max(3, min(10, max(1, length(clean_col) ÷ 10)))
+            treat_as_categorical = n_unique <= threshold
+        end
+
+        if treat_as_categorical
+            if length(unique_vals) > 1
+                ordered_levels = sort(unique_vals)
+                for level in ordered_levels[2:end]
                     indicators = column .== level
                     push!(X_cols, Float64.(indicators))
                 end
             end
+        else
+            push!(X_cols, Float64.(column))
         end
     end
     X = hcat(X_cols...)
@@ -239,7 +251,25 @@ end
 """
 function solve_mme(C::SparseMatrixCSC, rhs::Vector{Float64})
     @info "求解MME (维度: $(length(rhs)))..."
-    solution = C \ rhs
-    @info "MME求解完成。"
-    return solution
+    try
+        solution = C \ rhs
+        @info "MME求解完成。"
+        return solution
+    catch err
+        if err isa SingularException
+            diag_vals = [C[i, i] for i in 1:size(C, 1)]
+            max_diag = isempty(diag_vals) ? 1.0 : maximum(abs.(diag_vals))
+            jitter = max(max_diag, 1.0) * 1e-8
+            C_jittered = copy(C)
+            for i in 1:size(C_jittered, 1)
+                C_jittered[i, i] += jitter
+            end
+            @warn "MME矩阵奇异，已添加岭回归项 $(jitter) 以继续求解。"
+            solution = C_jittered \ rhs
+            @info "MME求解完成（含岭回归修正）。"
+            return solution
+        else
+            rethrow()
+        end
+    end
 end
