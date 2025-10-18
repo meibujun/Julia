@@ -117,5 +117,22 @@ using LinearAlgebra
         @test !isempty(result.breeding_values)
     end
 
+    @testset "选择与交配规划" begin
+        ebv = collect(1.0:10.0)
+        G = Matrix{Float64}(I, length(ebv), length(ebv))
+        ocs = optimal_contribution_selection(ebv, G, 4, max_relationship=0.05)
+        @test length(ocs["selected_indices"]) == 4
+        @test ocs["mean_relationship"] ≈ 0.0 atol=1e-8
+
+        sires = ocs["selected_indices"]
+        females = [5, 6, 7, 8]
+        mating_plan = design_mating_plan(sires, females, G, ebv[sires], ebv[females]; max_inbreeding=0.1)
+        @test nrow(mating_plan) == length(females)
+        @test all(mating_plan.expected_inbreeding .<= 0.1 + 1e-8)
+        samples = sample(1:20, 5, replace=false)
+        @test length(samples) == 5
+        @test length(unique(samples)) == 5
+    end
+
     println("\n✓ 核心数据层测试通过。")
 end

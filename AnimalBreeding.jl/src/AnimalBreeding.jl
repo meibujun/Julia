@@ -51,6 +51,9 @@ include("blup/mme_solver.jl")
 include("blup/reml.jl")
 include("blup/evaluation.jl")
 
+# --- 遗传选择与交配规划 ---
+include("selection/selection.jl")
+
 # ============================================================================
 # 模块导出 (公共API)
 # ----------------------------------------------------------------------------
@@ -80,6 +83,9 @@ export DataManager,
        run_evaluation,
        save_results,
        quickstart_gblup,
-       simulate_complete_dataset
+       simulate_complete_dataset,
+       optimal_contribution_selection,
+       design_mating_plan,
+       sample
 
 end # module AnimalBreeding

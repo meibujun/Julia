@@ -140,3 +140,12 @@ function save_results(result::GeneticEvalResult, filepath::String)
     CSV.write(filepath, output_df)
     @info "结果已保存。"
 end
+
+"""
+    save_results(result::GeneticEvalResult, dm::DataManager, filepath::String)
+
+向后兼容的三参数版本，保留 `DataManager` 形参以满足旧版示例脚本。
+"""
+function save_results(result::GeneticEvalResult, dm::DataManager, filepath::String)
+    return save_results(result, filepath)
+end
