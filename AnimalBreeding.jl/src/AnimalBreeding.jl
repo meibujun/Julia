@@ -22,6 +22,9 @@ module AnimalBreeding
 using LinearAlgebra, SparseArrays, Statistics, Random
 using DataFrames, CSV, ProgressMeter, Printf, Dates
 
+# Re-export常用的DataFrames工具，方便用户直接调用如 `nrow(dm.pedigree)`
+const nrow = DataFrames.nrow
+
 # ============================================================================
 # 子模块包含 (按照功能分层加载)
 # ----------------------------------------------------------------------------
@@ -86,6 +89,7 @@ export DataManager,
        simulate_complete_dataset,
        optimal_contribution_selection,
        design_mating_plan,
-       sample
+       sample,
+       nrow
 
 end # module AnimalBreeding
