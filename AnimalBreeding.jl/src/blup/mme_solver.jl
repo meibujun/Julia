@@ -152,8 +152,29 @@ function _relationship_inverse_matrix(dm::DataManager)
         return Matrix(dm.H_inv_matrix)
     elseif !isnothing(dm.A_inv_matrix)
         return Matrix(dm.A_inv_matrix)
+    end
+
+    # 如果尚未缓存所需的矩阵，尝试自动计算
+    try
+        if !isnothing(dm.genotypes)
+            H_inv = compute_relationship_matrix(dm, type=:singlestep)
+            return Matrix(H_inv)
+        end
+    catch err
+        @warn "自动计算H⁻¹失败，尝试退回到A⁻¹。" exception=(err, catch_backtrace())
+    end
+
+    if isnothing(dm.A_inv_matrix) && !isnothing(dm.pedigree)
+        A_inv = compute_relationship_matrix(dm, type=:pedigree_inverse)
+        return Matrix(A_inv)
+    elseif !isnothing(dm.A_inv_matrix)
+        return Matrix(dm.A_inv_matrix)
+    end
+
+    if isnothing(dm.pedigree)
+        error("模型需要A⁻¹或H⁻¹，但未提供谱系数据且自动计算失败。请在运行评估前加载并计算关系矩阵。")
     else
-        error("模型需要A⁻¹或H⁻¹，但未在DataManager中计算。")
+        error("模型需要A⁻¹或H⁻¹，但未在DataManager中计算，且自动计算失败。请先调用 compute_relationship_matrix。")
     end
 end
 
