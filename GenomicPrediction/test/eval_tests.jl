@@ -51,14 +51,15 @@ using Random
         pheno_df = DataFrame(y = y)
         mock_data = GenomicPrediction.GenomicData(geno_df, pheno_df)
 
-        # --- 2. 定义模型生成器 ---
-        # 必须是函数，因为 CV 内部每次循环都需要一个全新的模型实例
-        model_generator() = GenomicPrediction.GBLUPModel(5.0)
+        # --- 2. 定义模型模板 ---
+        # API 标准化：cross_validate 接收一个模型对象作为模板
+        model_template = GenomicPrediction.GBLUPModel(5.0)
 
         k = 3 # 3-折交叉验证
 
         # --- 3. 运行交叉验证 ---
-        results = GenomicPrediction.cross_validate(model_generator, mock_data, k)
+        cv_output = GenomicPrediction.cross_validate(model_template, mock_data, k)
+        results = cv_output.metrics # 提取指标字典
 
         # --- 4. 验证结果 ---
         @test results isa Dict{String, Float64}
@@ -66,6 +67,7 @@ using Random
         @test haskey(results, "mean_mse")
         @test -1.0 <= results["mean_accuracy"] <= 1.0
         @test results["mean_mse"] >= 0.0
+        @test length(cv_output.raw_accuracies) == k # 检查原始结果数量
     end
 
 end

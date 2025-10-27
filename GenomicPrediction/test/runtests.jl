@@ -11,6 +11,7 @@
 
 using Test
 using GenomicPrediction # 引入我们的主模块
+using Hyperopt         # 确保 Hyperopt 在所有测试中都可用
 
 # --- 测试欢迎语 ---
 println("="^60)
@@ -40,7 +41,10 @@ include("fair_tests.jl")
 println("[6/6] 正在测试: AutoGS (自动基因组选择)...")
 include("autogs_tests.jl")
 
-println("\n[7/7] 正在运行: 端到端集成测试...")
+println("\n[7/8] 正在测试: KernelModels (核方法)...")
+include("kernel_tests.jl")
+
+println("\n[8/8] 正在运行: 端到端集成测试...")
 include("integration_tests.jl")
 
 

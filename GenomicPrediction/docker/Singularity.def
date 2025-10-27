@@ -1,0 +1,40 @@
+# Singularity definition file for GenomicPrediction.jl
+# ===================================================
+# This file is used to build a Singularity container for the project.
+# It is designed to be self-contained and reproducible.
+#
+# To build the container, run:
+#   sudo singularity build genomic-prediction.sif Singularity.def
+
+Bootstrap: docker
+From: julia:1.11.6
+
+%help
+    This container runs GenomicPrediction.jl.
+
+    To start a Julia REPL within the project environment:
+        singularity exec <image>.sif julia --project=/app
+
+    To run a script:
+        singularity exec <image>.sif julia --project=/app /path/to/your/script.jl
+
+%files
+    # Copy the entire project into the container
+    . /app
+
+%post
+    # Set the working directory
+    cd /app
+
+    # Activate the project environment and precompile all dependencies
+    echo "Instantiating and precompiling Julia environment..."
+    julia --project -e 'using Pkg; Pkg.instantiate(); Pkg.precompile()'
+
+%environment
+    # Set any environment variables if needed
+    export JULIA_PROJECT=/app
+
+%runscript
+    echo "Starting Julia REPL in the GenomicPrediction.jl environment."
+    echo "Type 'using GenomicPrediction' to get started."
+    exec julia --project=/app "$@"

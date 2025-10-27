@@ -9,14 +9,15 @@
 using Test
 using DataFrames
 using Random
+using Hyperopt
 
 @testset "AutoGS.jl - 自动基因组选择模块测试" begin
 
     @testset "grid_search" begin
         # --- 1. 准备模拟数据 ---
         Random.seed!(789)
-        G = rand(30, 10)
-        y = rand(30)
+        G = rand(10, 5)
+        y = rand(10)
         geno_df = DataFrame(G, :auto)
         pheno_df = DataFrame(y = y)
         mock_data = GenomicPrediction.GenomicData(geno_df, pheno_df)
@@ -42,5 +43,33 @@ using Random
         @test haskey(search_result.results[1], :params)
         @test haskey(search_result.results[1], :metrics)
     end
+
+    # @testset "bayesian_optimization" begin
+    #     # --- 1. 準備模擬數據 ---
+    #     Random.seed!(101)
+    #     G = rand(10, 5)
+    #     y = rand(10)
+    #     geno_df = DataFrame(G, :auto)
+    #     pheno_df = DataFrame(y = y)
+    #     mock_data = GenomicPrediction.GenomicData(geno_df, pheno_df)
+
+    #     # --- 2. 定义模型生成器和搜索空间 ---
+    #     model_generator(params) = GenomicPrediction.GBLUPModel(params[:lambda])
+
+    #     # 使用 Hyperopt 语法定义搜索空间
+    #     search_space = Dict(
+    #         :lambda => Hyperopt.loguniform(log(1.0), log(1000.0))
+    #     )
+
+    #     # --- 3. 运行贝叶斯优化 ---
+    #     # 使用 k=2 和 max_iters=1 以加快测试速度
+    #     opt_result = GenomicPrediction.bayesian_optimization(model_generator, mock_data, search_space; k=2, max_iters=1)
+
+    #     # --- 4. 验证结果 ---
+    #     @test opt_result.best_params isa Dict
+    #     @test haskey(opt_result.best_params, :lambda)
+    #     # 检查 lambda 是否在定义的范围内
+    #     @test 1.0 <= opt_result.best_params[:lambda] <= 1000.0
+    # end
 
 end

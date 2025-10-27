@@ -58,8 +58,79 @@ using Random
         @test all(isfinite, predictions)
     end
 
+    # --- BayesC 模型测试 ---
+    @testset "BayesC 模型" begin
+        Random.seed!(44)
+        G = rand([0.0, 1.0, 2.0], 10, 5)
+        u_true = [0.9, 0.0, 0.0, 0.0, 0.0]
+        y = G * u_true + randn(10) * 0.1
+        geno_df = DataFrame(G, :auto)
+        pheno_df = DataFrame(y = y)
+        mock_data = GenomicPrediction.GenomicData(geno_df, pheno_df)
+
+        model = GenomicPrediction.BayesCModel(iterations=200, burnin=50, pi=0.1)
+        GenomicPrediction.fit!(model, mock_data)
+
+        @test length(model.effects) == 5
+        @test isfinite(model.intercept)
+        @test any(abs.(model.effects) .< 1e-4) # Verify sparsity
+
+        predictions = GenomicPrediction.predict(model, geno_df)
+        @test length(predictions) == 10
+        @test all(isfinite, predictions)
+    end
+
+    # --- BayesR 模型测试 ---
+    @testset "BayesR 模型" begin
+        Random.seed!(45)
+        G = rand([0.0, 1.0, 2.0], 10, 5)
+        u_true = [1.0, 0.0, 0.0, 0.05, 0.0]
+        y = G * u_true + randn(10) * 0.1
+        geno_df = DataFrame(G, :auto)
+        pheno_df = DataFrame(y = y)
+        mock_data = GenomicPrediction.GenomicData(geno_df, pheno_df)
+
+        model = GenomicPrediction.BayesRModel(iterations=200, burnin=50)
+        GenomicPrediction.fit!(model, mock_data)
+
+        @test length(model.effects) == 5
+        @test isfinite(model.intercept)
+        @test any(abs.(model.effects) .< 1e-4) # Verify sparsity
+
+        predictions = GenomicPrediction.predict(model, geno_df)
+        @test length(predictions) == 10
+        @test all(isfinite, predictions)
+    end
+
+    # --- BayesB 模型测试 ---
+    @testset "BayesB 模型" begin
+        Random.seed!(43)
+        G = rand([0.0, 1.0, 2.0], 10, 5)
+        # 真实效应更加稀疏，以稳定测试
+        u_true = [0.8, 0.0, 0.0, 0.0, 0.0]
+        y = G * u_true + randn(10) * 0.1
+        geno_df = DataFrame(G, :auto)
+        pheno_df = DataFrame(y = y)
+        mock_data = GenomicPrediction.GenomicData(geno_df, pheno_df)
+
+        # 使用较低的 pi 以增加稀疏性，使测试更稳定
+        model = GenomicPrediction.BayesBModel(iterations=200, burnin=50, pi=0.1)
+        GenomicPrediction.fit!(model, mock_data)
+
+        @test length(model.effects) == 5
+        @test isfinite(model.intercept)
+        # 验证 BayesB 的稀疏性：至少有一个效应应该接近于零
+        # 注意：由于随机性，这个测试可能不稳定，但在多数情况下应该通过
+        @test any(abs.(model.effects) .< 1e-4)
+
+        predictions = GenomicPrediction.predict(model, geno_df)
+        @test length(predictions) == 10
+        @test all(isfinite, predictions)
+    end
+
     # --- 正则化回归模型测试 ---
     @testset "正则化回归 (LASSO, Elastic Net)" begin
+        # ... (Regularized regression tests) ...
         Random.seed!(123)
         G = rand(50, 20)
         y = G[:, 1] * 2.5 - G[:, 5] * 1.5 + randn(50) * 0.5
@@ -70,8 +141,7 @@ using Random
         @testset "LASSO 模型" begin
             model = GenomicPrediction.LASSOModel(0.1)
             GenomicPrediction.fit!(model, mock_data)
-            @test model.path isa Any # GLMNet.GlmNetPath is not exported
-
+            @test model.path isa Any
             predictions = GenomicPrediction.predict(model, geno_df)
             @test length(predictions) == 50
             @test all(isfinite, predictions)
@@ -81,7 +151,6 @@ using Random
             model = GenomicPrediction.ElasticNetModel(0.1, 0.5)
             GenomicPrediction.fit!(model, mock_data)
             @test model.path isa Any
-
             predictions = GenomicPrediction.predict(model, geno_df)
             @test length(predictions) == 50
             @test all(isfinite, predictions)

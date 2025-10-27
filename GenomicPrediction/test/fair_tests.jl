@@ -10,6 +10,7 @@
 using Test
 using DataFrames
 using Random
+using Dates
 
 @testset "FAIRModeling.jl - FAIR 建模模块测试" begin
 
@@ -55,9 +56,39 @@ using Random
         rm(temp_path)
     end
 
-    # 占位符测试，以防未来添加更多功能
+    # 测试元数据保存和查看功能
     @testset "元数据管理" begin
-        @test true
+        # --- 1. 准备并训练模型 ---
+        model = GenomicPrediction.GBLUPModel(25.0)
+        G = rand(5, 2); y = rand(5)
+        data = GenomicPrediction.GenomicData(DataFrame(G, :auto), DataFrame(y=y))
+        GenomicPrediction.fit!(model, data)
+
+        # --- 2. 保存模型并检查元数据 ---
+        temp_path = mktemp()[1]
+        GenomicPrediction.save_model(model, temp_path)
+
+        metadata = GenomicPrediction.view_model_metadata(temp_path)
+
+        # --- 3. 验证元数据内容 ---
+        @test metadata isa Dict
+        @test haskey(metadata, :model_type)
+        @test metadata[:model_type] == string(typeof(model))
+
+        @test haskey(metadata, :model_parameters)
+        @test metadata[:model_parameters][:lambda] == 25.0
+
+        @test haskey(metadata, :save_timestamp)
+        @test metadata[:save_timestamp] isa DateTime
+
+        @test haskey(metadata, :julia_version)
+        @test metadata[:julia_version] == string(VERSION)
+
+        @test haskey(metadata, :package_version)
+        @test isnothing(metadata[:package_version]) || metadata[:package_version] isa String
+
+        # --- 4. 清理 ---
+        rm(temp_path)
     end
 
 end

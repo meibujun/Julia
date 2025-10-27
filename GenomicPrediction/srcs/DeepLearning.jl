@@ -72,7 +72,9 @@ end
 function get_conv_output_size(input_dim)
     conv_layers = Chain(
         x -> reshape(x, (input_dim, 1, 1, 1)),
-        Conv((3, 1), 1=>4, relu),
+        Conv((5, 1), 1=>16, relu),
+        MaxPool((2, 1)),
+        Conv((3, 1), 16=>32, relu),
         MaxPool((2, 1)),
         Flux.flatten
     )
@@ -92,7 +94,9 @@ mutable struct CNNModel <: AbstractModel
         conv_output_size = get_conv_output_size(input_dim)
         chain = Chain(
             x -> reshape(x, (input_dim, 1, 1, size(x, 2))),
-            Conv((3, 1), 1=>4, relu),
+            Conv((5, 1), 1=>16, relu),
+            MaxPool((2, 1)),
+            Conv((3, 1), 16=>32, relu),
             MaxPool((2, 1)),
             Flux.flatten,
             Dense(conv_output_size => 128, relu),
