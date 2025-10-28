@@ -1,130 +1,129 @@
-# AutoGS.jl - 自动基因组选择 (Automated Genomic Selection) 模块
-# ----------------------------------------------------------------
+# AutoGS.jl - 自动基因组选择模块
+# ==========================================================
 # 提供自动化超参数调优和模型选择的功能。
-# ----------------------------------------------------------------
+#
+# 本文件经过修正，以移除对 `cross_validate_func` 的依赖，
+# 转而直接调用包内定义的 `cross_validate` 函数，从而简化 API。
+# ==========================================================
 
 module AutoGS
 
-using ..DataProcessing
-using ..CoreAlgorithm
-using ..Evaluation
-using IterTools
+# --- 1. 导入依赖 ---
+using ..GenomicPrediction: AbstractModel, GenomicData, cross_validate
+using Hyperopt
 using Random
-using Statistics
+using ProgressMeter
+using IterTools
 
+# --- 2. 模块接口 ---
 export grid_search, bayesian_optimization
 
-"""
-    grid_search(model_generator, data::GenomicData, hyperparameters::Dict, cross_validate_func; k=3, metric="mean_accuracy", rng=Random.GLOBAL_RNG) -> NamedTuple
+@doc raw"""
+    grid_search(model_constructor, data::GenomicData, hyperparameters; k=5, metric=:mean_accuracy, rng=Random.GLOBAL_RNG)
 
-对给定的模型和超参数网格执行网格搜索，以找到最佳超参数组合。
+使用网格搜索，通过交叉验证来寻找最佳超参数组合。
 
-该函数通过交叉验证评估每组超参数的性能。
-
-# 参数
-- `model_generator`: 一个函数，接收超参数字典并返回一个新的模型实例。例如 `params -> GBLUPModel(lambda=params[:lambda])`。
-- `data::GenomicData`: 用于评估的 `GenomicData` 对象。
-- `hyperparameters::Dict`: 一个字典，键是超参数名称 (Symbol)，值是待测试值的向量。
-- `cross_validate_func`: 用于执行交叉验证的函数，通常是 `Evaluation.cross_validate`。
+# Arguments
+- `model_constructor`: 一个接受关键字参数并返回 `AbstractModel` 实例的函数。例如 `params -> GBLUPModel(params[:lambda])`。
+- `data::GenomicData`: 完整的 `GenomicData` 对象。
+- `hyperparameters::Dict`: 一个字典，键是超参数的符号，值是待测试值的向量。
 - `k::Int`: 交叉验证的折数。
-- `metric::String`: 用于选择最佳模型的评估指标名称。该名称必须是 `cross_validate` 返回结果的 `metrics` 字典中的一个键。
-- `rng`: 随机数生成器，用于确保交叉验证数据划分的可复现性。
+- `metric::Symbol`: 用于评估性能的指标 (`:mean_accuracy` 或 `:mean_mse`)。
+- `rng::AbstractRNG`: 用于交叉验证数据混洗的随机数生成器。
 
-# 返回
-- `NamedTuple`: 包含两个字段：
-    - `best_params`: 性能最佳的超参数字典。
-    - `results`: 一个包含每次运行的详细结果（参数和指标）的向量。
-
-# 示例
-```julia
-# hyper_grid = Dict(:lambda => [1.0, 10.0, 100.0])
-# model_gen(p) = GBLUPModel(lambda=p[:lambda])
-# result = grid_search(model_gen, my_data, hyper_grid, cross_validate)
-# println("最佳 lambda: ", result.best_params[:lambda])
-```
+# Returns
+- 包含最佳参数、最佳得分和所有结果的 NamedTuple。
 """
-function grid_search(model_generator, data::GenomicData, hyperparameters::Dict, cross_validate_func; k=3, metric="mean_accuracy", rng=Random.GLOBAL_RNG)
+function grid_search(model_constructor, data::GenomicData, hyperparameters; k=5, metric=:mean_accuracy, rng=Random.GLOBAL_RNG)
     param_names = keys(hyperparameters)
-    param_values = values(hyperparameters)
-    # 修正：使用 Iterators.product 来避免弃用警告
-    param_combinations = Iterators.product(param_values...)
+    param_combinations = [Dict(zip(param_names, values)) for values in product(values(hyperparameters)...)]
 
-    all_results = []
-    best_score = -Inf
+    # 根据指标确定是最大化还是最小化
+    lower_is_better = (metric == :mean_mse)
+    best_score = lower_is_better ? Inf : -Inf
     best_params = nothing
+    all_results = []
 
-    println("开始网格搜索，总共 ", length(param_combinations), " 种参数组合...")
+    println("开始网格搜索，总共 $(length(param_combinations)) 种参数组合...")
+    p = Progress(length(param_combinations), 1, "网格搜索进度:")
 
-    for params_tuple in param_combinations
-        current_params = Dict(zip(param_names, params_tuple))
+    for params in param_combinations
+        # 1. 使用当前参数组合构造模型
+        model_prototype = model_constructor(params)
 
-        println("  正在测试参数: ", current_params)
+        # 2. 直接调用 cross_validate 函数
+        cv_results = cross_validate(model_prototype, data; k=k, rng=rng)
+        score = getfield(cv_results, metric)
 
-        model_instance = model_generator(current_params)
+        push!(all_results, (params=params, metrics=cv_results))
 
-        # 修正：将关键字参数 k=k 改为位置参数 k
-        cv_results = cross_validate_func(model_instance, data, k, rng=rng)
-
-        current_score = cv_results.metrics[metric]
-
-        push!(all_results, (params=current_params, metrics=cv_results.metrics))
-
-        if current_score > best_score
-            best_score = current_score
-            best_params = current_params
+        # 3. 更新最佳参数
+        if (lower_is_better && score < best_score) || (!lower_is_better && score > best_score)
+            best_score = score
+            best_params = params
         end
+        next!(p)
     end
 
-    println("网格搜索完成。")
-    println("最佳得分 ($metric): $best_score")
-    println("最佳参数: ", best_params)
+    println("\n网格搜索完成。")
+    println("最佳得分 ($metric): $(round(best_score, digits=4))")
+    println("最佳参数: $best_params")
 
-    # 确保返回结果
-    return (best_params = best_params, results = all_results)
+    return (best_params=best_params, best_score=best_score, results=all_results)
 end
 
-using Hyperopt
-
 @doc raw"""
-    bayesian_optimization(model_generator, data::GenomicData, search_space, cross_validate_func; k=3, metric="mean_accuracy", max_iters=50, rng=Random.GLOBAL_RNG) -> NamedTuple
+    bayesian_optimization(model_constructor, data::GenomicData, search_space; k=5, max_iters=30, metric=:mean_accuracy, rng=Random.GLOBAL_RNG)
 
-使用贝叶斯优化 (通过 Hyperopt.jl) 来寻找最佳超参数。
+使用贝叶斯优化，通过交叉验证来寻找最佳超参数。
 
-# 参数
-- `model_generator`: 创建模型实例的函数。
-- `data::GenomicData`: 数据集。
-- `search_space`: `Hyperopt` 搜索空间。例如 `Dict(:lambda => @hyperopt(hp.loguniform(log(1.0), log(1000.0))))`。
-- `cross_validate_func`: 交叉验证函数。
-- `max_iters::Int`: 优化的最大迭代次数。
+# Arguments
+- `model_constructor`: 一个接受关键字参数并返回 `AbstractModel` 实例的函数。
+- `data::GenomicData`: 完整的 `GenomicData` 对象。
+- `search_space::Dict`: `Hyperopt` 的搜索空间定义。
+- `k::Int`: 交叉验证的折数。
+- `max_iters::Int`: 贝叶斯优化的最大迭代次数。
+- `metric::Symbol`: 用于评估性能的指标 (`:mean_accuracy` 或 `:mean_mse`)。
+- `rng::AbstractRNG`: 随机数生成器。
 
-# 返回
-- `NamedTuple`: 包含 `best_params` 和 `results`。
+# Returns
+- 包含最佳参数和最佳得分的 NamedTuple。
 """
-function bayesian_optimization(model_generator, data::GenomicData, search_space, cross_validate_func; k=3, metric="mean_accuracy", max_iters=50, rng=Random.GLOBAL_RNG)
-    println("开始贝叶斯优化 (最大迭代次数: $max_iters)...")
+function bayesian_optimization(model_constructor, data::GenomicData, search_space; k=5, max_iters=30, metric=:mean_accuracy, rng=Random.GLOBAL_RNG)
 
-    # Hyperopt 最小化目标，所以我们需要返回负的准确率
+    lower_is_better = (metric == :mean_mse)
+
+    # 定义 Hyperopt 的目标函数
     function objective(params)
-        model = model_generator(params)
-        cv_results = cross_validate_func(model, data, k; rng=rng)
-        score = cv_results.metrics[metric]
-        # Hyperopt.jl expects a dictionary with a :loss key
-        return Dict(:loss => -score, :status => "ok")
+        # Hyperopt 返回的是 Tuple，需要转换为 Dict
+        params_dict = Dict(params)
+
+        model_prototype = model_constructor(params_dict)
+
+        cv_results = cross_validate(model_prototype, data; k=k, rng=rng)
+        score = getfield(cv_results, metric)
+
+        # Hyperopt 总是最小化，所以如果指标是越大越好，我们需要取其负值
+        return lower_is_better ? score : -score
     end
 
-    # 创建 Hyperopt 对象
-    ho = Hyperopt(objective, search_space)
+    println("开始贝叶斯优化，最大迭代次数: $max_iters...")
 
-    # 运行优化
-    best_params = @hyperopt for i=max_iters, params=search_space
-        objective(params)
+    # 执行优化
+    ho = @hyperopt for i=max_iters, sampler=RandomSampler(rng=rng), kwargs=search_space
+        # 在每次迭代打印信息
+        println("  [迭代 $i/$max_iters] 测试参数: $kwargs")
+        objective(kwargs)
     end
 
-    println("贝叶斯优化完成。")
-    # 注意：@hyperopt 宏直接返回最佳参数字典
-    # 为了与 grid_search 的输出保持一致，我们不存储详细的迭代结果
+    best_params_dict = Dict(ho.minimizer)
+    best_score = lower_is_better ? ho.minimum : -ho.minimum
 
-    return (best_params = best_params, results = [])
+    println("\n贝叶斯优化完成。")
+    println("最佳得分 ($metric): $(round(best_score, digits=4))")
+    println("最佳参数: $best_params_dict")
+
+    return (best_params=best_params_dict, best_score=best_score)
 end
 
 

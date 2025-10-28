@@ -1,5 +1,11 @@
-# API Reference
+# API 参考
+
+本页提供了 `GenomicPrediction.jl` 所有公共函数的详细文档。
+
+```@index
+```
 
 ```@autodocs
-Modules = [GenomicPrediction, GenomicPrediction.DataProcessing, GenomicPrediction.CoreAlgorithm, GenomicPrediction.DeepLearning, GenomicPrediction.KernelModels, GenomicPrediction.Evaluation, GenomicPrediction.FAIRModeling, GenomicPrediction.AutoGS]
+Modules = [GenomicPrediction]
+Order   = [:type, :function]
 ```

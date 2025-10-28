@@ -3,28 +3,15 @@
 #
 # This script demonstrates how to call the GenomicPrediction.jl package from Python
 # using the PyJulia library.
-#
-# Installation:
-# 1. Make sure you have Julia installed and accessible in your PATH.
-# 2. Install PyJulia: `pip install julia`
-# 3. From Python, configure PyJulia for your environment:
-#    >>> import julia
-#    >>> julia.install()
 
 import julia
 from julia import Pkg
 
 def main():
-    """
-    A complete workflow demonstrating calling Julia from Python.
-    """
     print("Initializing Julia runtime...")
-    # Initialize Julia. This will take a moment as it loads the environment.
-    # By default, it will use the environment in the parent directory of this script.
     julia.Julia(compiled_modules=False)
 
     print("Activating Julia environment for GenomicPrediction.jl...")
-    # Assumes the script is run from the `GenomicPrediction/interfaces/python` directory
     Pkg.activate("../../")
 
     print("Loading GenomicPrediction.jl package...")
@@ -35,36 +22,39 @@ def main():
     geno_path = "../sample_data/genotypes.csv"
     pheno_path = "../sample_data/phenotypes.csv"
 
-    # Call the Julia function `load_csv`
-    mock_data = GP.load_csv(geno_path, pheno_path, header_geno=False, header_pheno=True)
-    print("Data loaded successfully into a GenomicData object.")
+    # Create dummy data for the example
+    from julia import CSV, DataFrame
+    CSV.write(geno_path, DataFrame(ID=range(1, 6), m1=[0,1,2,0,1], m2=[2,1,0,2,1]))
+    CSV.write(pheno_path, DataFrame(ID=range(1, 6), y=[1.1, 1.9, 3.2, 1.2, 2.3]))
+
+    mock_data = GP.load_csv(geno_path, pheno_path, header_geno=True, header_pheno=True)
+    print("Data loaded successfully.")
 
     # --- 2. Initialize and Train a Model ---
     print("\n--- Step 2: Training GBLUP Model ---")
-    # Initialize a GBLUPModel with a lambda of 10.0
     model = GP.GBLUPModel(10.0)
-
-    # Train the model (this modifies the model in-place)
-    GP.fit_b(model, mock_data) # fit! is aliased to fit_b in PyJulia
+    GP.fit_b(model, mock_data) # fit! is aliased to fit_b
     print("Model training complete.")
 
-    # --- 3. Make Predictions ---
-    print("\n--- Step 3: Making Predictions ---")
-    # We'll predict on the same data we trained on for this example
+    # --- 3. Save and Load Model ---
+    print("\n--- Step 3: Saving and Reloading Model ---")
+    temp_path = "temp_model.bson"
+    GP.save_model(model, temp_path)
+    print(f"Model saved to {temp_path}")
+    loaded_model = GP.load_model(temp_path)
+    print("Model successfully reloaded.")
+
+    # --- 4. Make Predictions ---
+    print("\n--- Step 4: Making Predictions ---")
     genotypes_df = mock_data.genotypes
-    predictions = GP.predict(model, genotypes_df)
+    predictions = GP.predict(loaded_model, genotypes_df)
 
     print("Predictions obtained.")
 
-    # --- 4. Display Results ---
-    print("\n--- Step 4: Results ---")
-    # The result from Julia is a Julia vector. We can convert it to a Python list.
+    # --- 5. Display Results ---
+    print("\n--- Step 5: Results ---")
     predictions_list = list(predictions)
-
-    print(f"Number of predictions: {len(predictions_list)}")
-    print("Predicted values:")
-    for i, p in enumerate(predictions_list):
-        print(f"  Individual {i+1}: {p:.4f}")
+    print(f"Predicted values: {predictions_list}")
 
 if __name__ == "__main__":
     main()

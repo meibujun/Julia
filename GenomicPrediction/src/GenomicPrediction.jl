@@ -1,135 +1,87 @@
 # GenomicPrediction.jl - 基因组预测理论与方法综合软件包
 # ==========================================================
-# ... (header comments) ...
+# 这是软件包的主模块，负责整合所有子模块并提供统一的公共 API。
+# 职责:
+# 1. 定义核心抽象类型 (AbstractModel, GenomicData)。
+# 2. 定义通用的 API 函数存根 (fit!, predict)。
+# 3. 包含所有功能的子模块。
+# 4. 导出所有公共 API，供用户使用。
+# ==========================================================
 
 module GenomicPrediction
 
-# ... (using statements) ...
+# --- 1. 导入核心依赖 ---
+# 整个包几乎都会用到的依赖可以放在这里
 using DataFrames
 using Random
-using IterTools
+using Statistics
+using LinearAlgebra
 
-# --- 1. 定义核心抽象类型 ---
+# --- 2. 定义核心抽象类型和结构 ---
+
 @doc raw"""
     AbstractModel
 所有基因组预测模型的抽象父类型。
 """
 abstract type AbstractModel end
 
-# --- 2. 引入子模块 ---
-# ... (includes) ...
-include("DataProcessing.jl")
-include("CoreAlgorithm.jl")
-include("DeepLearning.jl")
-include("Evaluation.jl")
-include("FAIRModeling.jl")
-include("AutoGS.jl")
-include("KernelModels.jl")
+# --- 3. 定义通用的公共 API 函数存根 ---
+# 这些是通用函数，子模块将为具体的模型类型提供实现。
+# 我们在这里定义它们，以便子模块可以扩展。
 
-
-# --- 3. 显式函数转发和类型别名 ---
-# ... (forwarding for types) ...
-const GenomicData = DataProcessing.GenomicData
-const load_csv = DataProcessing.load_csv
-const GBLUPModel = CoreAlgorithm.GBLUPModel
-const BayesAModel = CoreAlgorithm.BayesAModel
-const BayesBModel = CoreAlgorithm.BayesBModel
-const BayesCModel = CoreAlgorithm.BayesCModel
-const BayesRModel = CoreAlgorithm.BayesRModel
-const LASSOModel = CoreAlgorithm.LASSOModel
-const ElasticNetModel = CoreAlgorithm.ElasticNetModel
-const FNNModel = DeepLearning.FNNModel
-const CNNModel = DeepLearning.CNNModel
-const TransformerModel = DeepLearning.TransformerModel
-const GNNModel = DeepLearning.GNNModel
-const ssGBLUPModel = KernelModels.ssGBLUPModel
-const accuracy = Evaluation.accuracy
-const mse = Evaluation.mse
-const save_model = FAIRModeling.save_model
-const load_model = FAIRModeling.load_model
-const view_model_metadata = FAIRModeling.view_model_metadata
-
-
-# 通用函数 (转发到各自的实现)
 @doc raw"""
-    fit!(model::AbstractModel, data::GenomicData)
-
-使用提供的数据训练一个模型。该函数会原地修改 `model` 对象。
-
-# 参数
-- `model::AbstractModel`: 一个模型实例，例如 `GBLUPModel`。
-- `data::GenomicData`: 用于训练的 `GenomicData` 对象。
+    fit!(model::AbstractModel, data)
+就地训练模型。这是每个模型类型必须实现的核心函数。
 """
 function fit! end
 
 @doc raw"""
-    fit(model::AbstractModel, data::GenomicData) -> AbstractModel
-
-A non-mutating version of `fit!`. This function creates a deep copy of the model,
-trains it, and returns the trained copy. Useful for functional programming patterns
-and for interfaces with languages like Python where mutating functions can be awkward.
-"""
-function fit(model::AbstractModel, data::GenomicData; rng = Random.GLOBAL_RNG)
-    new_model = deepcopy(model)
-    fit!(new_model, data; rng=rng)
-    return new_model
-end
-
-fit!(model::GBLUPModel, data::GenomicData) = CoreAlgorithm.fit!(model, data)
-fit!(model::BayesAModel, data::GenomicData; rng = Random.GLOBAL_RNG) = CoreAlgorithm.fit!(model, data; rng=rng)
-fit!(model::BayesBModel, data::GenomicData; rng = Random.GLOBAL_RNG) = CoreAlgorithm.fit!(model, data; rng=rng)
-fit!(model::BayesCModel, data::GenomicData; rng = Random.GLOBAL_RNG) = CoreAlgorithm.fit!(model, data; rng=rng)
-fit!(model::BayesRModel, data::GenomicData; rng = Random.GLOBAL_RNG) = CoreAlgorithm.fit!(model, data; rng=rng)
-fit!(model::LASSOModel, data::GenomicData) = CoreAlgorithm.fit!(model, data)
-fit!(model::ElasticNetModel, data::GenomicData) = CoreAlgorithm.fit!(model, data)
-fit!(model::FNNModel, data::GenomicData) = DeepLearning.fit!(model, data)
-fit!(model::CNNModel, data::GenomicData) = DeepLearning.fit!(model, data)
-fit!(model::TransformerModel, data::GenomicData) = DeepLearning.fit!(model, data)
-fit!(model::GNNModel, data::GenomicData) = DeepLearning.fit!(model, data)
-fit!(model::ssGBLUPModel, data::GenomicData) = KernelModels.fit!(model, data)
-
-@doc raw"""
-    predict(model::AbstractModel, new_data::DataFrame) -> Vector
-
-使用一个训练好的模型进行预测。
-
-# 参数
-- `model::AbstractModel`: 一个已训练的模型实例。
-- `new_data::DataFrame`: 用于预测的新基因型数据。
-
-# 返回
-- `Vector`: 预测的表型值。
+    predict(model::AbstractModel, new_data)
+使用训练好的模型进行预测。
 """
 function predict end
 
-predict(model::GBLUPModel, new_data::DataFrame) = CoreAlgorithm.predict(model, new_data)
-predict(model::BayesAModel, new_data::DataFrame) = CoreAlgorithm.predict(model, new_data)
-predict(model::BayesBModel, new_data::DataFrame) = CoreAlgorithm.predict(model, new_data)
-predict(model::BayesCModel, new_data::DataFrame) = CoreAlgorithm.predict(model, new_data)
-predict(model::BayesRModel, new_data::DataFrame) = CoreAlgorithm.predict(model, new_data)
-predict(model::LASSOModel, new_data::DataFrame) = CoreAlgorithm.predict(model, new_data)
-predict(model::ElasticNetModel, new_data::DataFrame) = CoreAlgorithm.predict(model, new_data)
-predict(model::FNNModel, new_data::DataFrame) = DeepLearning.predict(model, new_data)
-predict(model::CNNModel, new_data::DataFrame) = DeepLearning.predict(model, new_data)
-predict(model::TransformerModel, new_data::DataFrame) = DeepLearning.predict(model, new_data)
-predict(model::GNNModel, new_data::DataFrame) = DeepLearning.predict(model, new_data)
-predict(model::ssGBLUPModel, new_ids::Vector{Int}) = KernelModels.predict(model, new_ids)
 
-# ... (cross_validate and grid_search wrappers) ...
-function cross_validate(model_generator, data::GenomicData, k::Int; rng = Random.GLOBAL_RNG)
-    return Evaluation.cross_validate(model_generator, data, k, fit!, predict; rng=rng)
-end
-function grid_search(model_generator, data::GenomicData, hyperparameters; k=3, metric="mean_accuracy", rng=Random.GLOBAL_RNG)
-    return AutoGS.grid_search(model_generator, data, hyperparameters, cross_validate; k=k, metric=metric, rng=rng)
+# --- 4. 引入子模块 ---
+# 每个文件都包含一个独立的子模块，负责一块具体的功能。
+include("DataProcessing.jl")
+include("CoreAlgorithm.jl")
+include("KernelModels.jl")
+include("DeepLearning.jl")
+include("Evaluation.jl")
+include("FAIRModeling.jl")
+include("AutoGS.jl")
+
+
+# --- 5. 从子模块导入所有公共符号，以便重新导出 ---
+using .DataProcessing: GenomicData, load_csv, calculate_grm, filter_markers, impute_mean
+using .CoreAlgorithm: GBLUPModel, BayesAModel, BayesBModel, BayesCModel, BayesRModel, LASSOModel, ElasticNetModel
+using .KernelModels: ssGBLUPModel
+using .DeepLearning: FNNModel, CNNModel, TransformerModel, GNNModel
+using .Evaluation: cross_validate, accuracy, mse
+using .FAIRModeling: save_model, load_model, view_model_metadata
+using .AutoGS: grid_search, bayesian_optimization
+
+
+# --- 6. 定义一个非破坏性的 `fit` 函数 ---
+@doc raw"""
+    fit(model::AbstractModel, data; kwargs...) -> AbstractModel
+训练模型并返回一个新的、训练好的模型副本，原始模型不变。
+"""
+function fit(model::AbstractModel, data; kwargs...)
+    new_model = deepcopy(model)
+    fit!(new_model, data; kwargs...)
+    return new_model
 end
 
-# --- 4. 导出统一的公共 API ---
-export GenomicData, load_csv
-export AbstractModel, GBLUPModel, BayesAModel, BayesBModel, BayesCModel, BayesRModel, LASSOModel, ElasticNetModel, FNNModel, CNNModel, TransformerModel, GNNModel, ssGBLUPModel
+
+# --- 7. 导出统一的公共 API ---
+# 这里列出了用户可以直接使用的所有功能。
+export GenomicData, load_csv, calculate_grm, filter_markers, impute_mean
+export AbstractModel, GBLUPModel, BayesAModel, BayesBModel, BayesCModel, BayesRModel, LASSOModel, ElasticNetModel, ssGBLUPModel, FNNModel, CNNModel, TransformerModel, GNNModel
 export fit!, fit, predict
-export accuracy, mse
+export cross_validate, accuracy, mse
 export save_model, load_model, view_model_metadata
-export cross_validate
-export grid_search
+export grid_search, bayesian_optimization
 
 end # module GenomicPrediction
