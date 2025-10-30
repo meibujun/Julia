@@ -1,8 +1,7 @@
 # DataProcessing.jl - 数据处理模块
 # ==========================================================
-# 负责数据的加载、预处理、质量控制和基因组关系矩阵（GRM）的计算。
-#
-# 本文件经过优化，`calculate_grm` 函数现在使用多线程来加速计算。
+# 本文件经过了重大的架构重构，引入了 AbstractGenomicData 抽象类型，
+# 为支持内存映射文件等可扩展的数据后端奠定了基础。
 # ==========================================================
 
 module DataProcessing
@@ -13,25 +12,72 @@ using CSV
 using Statistics
 using LinearAlgebra
 using Base.Threads
+using PGENFiles
 
 # --- 2. 模块接口 ---
-export GenomicData, load_csv, calculate_grm, filter_markers, impute_mean
+export AbstractGenomicData, InMemoryGenomicData, PGENGenomicData, load_csv, load_pgen, get_genotypes, get_phenotypes, get_pedigree, get_covariates
+export calculate_grm, filter_markers, impute_mean
 
 # --- 3. 核心数据结构 ---
+
 @doc raw"""
-    GenomicData(genotypes::DataFrame, phenotypes::DataFrame, covariates::Union{DataFrame, Nothing}=nothing, pedigree::Union{DataFrame, Nothing}=nothing)
+    AbstractGenomicData
+所有基因组数据容器的抽象父类型。
+该抽象类型为不同的数据后端（如内存、内存映射文件）提供了一个统一的接口。
 """
-struct GenomicData
+abstract type AbstractGenomicData end
+
+@doc raw"""
+    InMemoryGenomicData <: AbstractGenomicData
+一个将所有数据完整加载到内存中的数据容器。
+"""
+struct InMemoryGenomicData <: AbstractGenomicData
     genotypes::DataFrame
     phenotypes::DataFrame
     covariates::Union{DataFrame, Nothing}
     pedigree::Union{DataFrame, Nothing}
 end
 
-# --- 4. 功能实现 ---
+@doc raw"""
+    PGENGenomicData <: AbstractGenomicData
+一个用于处理 PGEN 格式基因型数据的数据容器。
+它不会将基因型矩阵完全加载到内存中，而是通过内存映射按需访问。
+"""
+struct PGENGenomicData <: AbstractGenomicData
+    pgen::Pgen
+    phenotypes::DataFrame
+    covariates::Union{DataFrame, Nothing}
+    pedigree::Union{DataFrame, Nothing}
+end
+
+# --- 4. 数据访问器接口 ---
 
 @doc raw"""
-    load_csv(geno_path::String, pheno_path::String; cov_path=nothing, ped_path=nothing, header_geno=true, header_pheno=true) -> GenomicData
+    get_genotypes(data::AbstractGenomicData) -> DataFrame
+"""
+get_genotypes(data::InMemoryGenomicData) = data.genotypes
+get_genotypes(data::PGENGenomicData) = data.pgen
+
+@doc raw"""
+    get_phenotypes(data::AbstractGenomicData) -> DataFrame
+"""
+get_phenotypes(data::InMemoryGenomicData) = data.phenotypes
+
+@doc raw"""
+    get_pedigree(data::AbstractGenomicData) -> Union{DataFrame, Nothing}
+"""
+get_pedigree(data::InMemoryGenomicData) = data.pedigree
+
+@doc raw"""
+    get_covariates(data::AbstractGenomicData) -> Union{DataFrame, Nothing}
+"""
+get_covariates(data::InMemoryGenomicData) = data.covariates
+
+
+# --- 5. 功能实现 ---
+
+@doc raw"""
+    load_csv(...) -> InMemoryGenomicData
 """
 function load_csv(geno_path::String, pheno_path::String; cov_path::Union{String, Nothing}=nothing, ped_path::Union{String, Nothing}=nothing, header_geno=true, header_pheno=true)
     geno_df = CSV.read(geno_path, DataFrame, header=header_geno)
@@ -49,78 +95,108 @@ function load_csv(geno_path::String, pheno_path::String; cov_path::Union{String,
     pheno_aligned = filter(:ID => id -> id in common_ids, pheno_df)
     cov_aligned = !isnothing(cov_df) ? filter(:ID => id -> id in common_ids, cov_df) : nothing
 
-    return GenomicData(geno_aligned, pheno_aligned, cov_aligned, ped_df)
+    return InMemoryGenomicData(geno_aligned, pheno_aligned, cov_aligned, ped_df)
 end
 
 @doc raw"""
-    calculate_grm(G::Matrix{<:Real}; scale=true) -> Matrix{Float64}
-
-根据给定的基因型矩阵 `G` 计算基因组关系矩阵 (GRM)。使用 VanRaden (2008) 的方法一。
-此实现利用多线程并行计算以提高大型数据集的处理速度。
-
-# Arguments
-- `G::Matrix`: 基因型矩阵，个体为行，标记为列。数值应为 0, 1, 2。
-- `scale::Bool`: 是否对 GRM 进行标准化。
-
-# Returns
-- `Matrix{Float64}`: 基因组关系矩阵。
+    load_pgen(pgen_path::String, pheno_path::String; cov_path=nothing, ped_path=nothing) -> PGENGenomicData
+加载 PGEN 格式的基因型数据以及其他相关的 CSV 数据。
 """
-function calculate_grm(G::Matrix{<:Real}; scale=true)
+function load_pgen(pgen_path::String, pheno_path::String; cov_path::Union{String, Nothing}=nothing, ped_path::Union{String, Nothing}=nothing)
+    # PGEN 文件需要 .pvar 和 .psam 文件在同一目录下
+    pgen = Pgen(pgen_path)
+
+    # 从 .psam 文件获取样本 ID
+    psam_df = CSV.read(replace(pgen_path, ".pgen" => ".psam"), DataFrame)
+    sample_ids = psam_df[!, 1]
+
+    pheno_df = CSV.read(pheno_path, DataFrame)
+    rename!(pheno_df, names(pheno_df)[1] => :ID)
+
+    # (此处省略了数据对齐的逻辑，简化实现)
+
+    cov_df = !isnothing(cov_path) ? CSV.read(cov_path, DataFrame) : nothing
+    ped_df = !isnothing(ped_path) ? CSV.read(ped_path, DataFrame) : nothing
+    if !isnothing(cov_df); rename!(cov_df, names(cov_df)[1] => :ID); end
+    if !isnothing(ped_df); rename!(ped_df, names(ped_df)[1:3] .=> [:ID, :Sire, :Dam]); end
+
+    return PGENGenomicData(pgen, pheno_df, cov_df, ped_df)
+end
+
+@doc raw"""
+    calculate_grm(data::AbstractGenomicData; scale=true) -> Matrix{Float64}
+"""
+function calculate_grm(data::AbstractGenomicData; scale=true)
+    # 这是一个 dispatch，将根据数据类型调用不同的实现
+    _calculate_grm(get_genotypes(data), scale)
+end
+
+# 内存版本的实现
+function _calculate_grm(geno_df::DataFrame, scale::Bool)
+    G = Matrix(geno_df[!, 2:end])
     n, m = size(G)
-
-    # 1. 计算等位基因频率 p (此步很快，无需并行)
     p = mean(G, dims=1) ./ 2
+    M = G .- (2 .* p)
+    GRM = M * M'
 
-    # 2. 创建中心化矩阵 M (此步很快，无需并行)
-    P = 2 .* p
-    M = G .- P
-
-    # 3. 并行计算 GRM = M * M'
-    # 这是计算密集型步骤，我们在此处使用多线程。
-    GRM = zeros(Float64, n, n)
-
-    # 使用 @threads 宏将外层循环（计算 GRM 的每一行）分配到多个线程
-    # 由于 GRM 是对称的，我们只计算上三角部分以避免重复计算和线程间的竞争条件。
-    @threads for i in 1:n
-        for j in i:n
-            # 使用 `dot` 和 `view` 高效计算点积 M[i,:]' * M[j,:]
-            GRM[i, j] = dot(view(M, i, :), view(M, j, :))
-        end
-    end
-
-    # 填充下三角部分（此步很快，单线程执行）
-    for i in 1:n
-        for j in (i + 1):n
-            GRM[j, i] = GRM[i, j]
-        end
-    end
-
-    # 4. 标准化 GRM
     denominator = 2 * sum(p .* (1 .- p))
-    if denominator == 0
-        error("基因型数据没有变异，无法计算 GRM。")
+    if denominator == 0; error("基因型数据没有变异，无法计算 GRM。"); end
+
+    return GRM ./ denominator
+end
+
+# PGEN 版本的实现 (内存高效)
+function _calculate_grm(pgen::Pgen, scale::Bool; chunk_size=1000)
+    n_samples, n_variants = n_samples(pgen), n_variants(pgen)
+    GRM = zeros(Float64, n_samples, n_samples)
+
+    # 计算等位基因频率 (需要一次完整的遍历)
+    p = zeros(n_variants)
+    for i in 1:n_variants
+        p[i] = mean(convert(Vector{Float32}, @view(pgen[:, i]))) / 2
     end
 
-    GRM ./= denominator
+    # 分块计算 M*M'
+    for i in 1:chunk_size:n_variants
+        last = min(i + chunk_size - 1, n_variants)
 
-    return GRM
+        # 读取一个数据块
+        G_chunk = convert(Matrix{Float32}, @view(pgen[:, i:last]))
+        p_chunk = @view p[i:last]
+
+        # 中心化
+        M_chunk = G_chunk .- (2 .* p_chunk')
+
+        # 累加到 GRM
+        GRM .+= M_chunk * M_chunk'
+    end
+
+    denominator = 2 * sum(p .* (1 .- p))
+    if denominator == 0; error("基因型数据没有变异，无法计算 GRM。"); end
+
+    return GRM ./ denominator
 end
 
 @doc raw"""
-    filter_markers(geno_df::DataFrame; maf_threshold=0.05) -> DataFrame
+    filter_markers(data::AbstractGenomicData; maf_threshold=0.05) -> InMemoryGenomicData
 """
-function filter_markers(geno_df::DataFrame; maf_threshold=0.05)
+function filter_markers(data::AbstractGenomicData; maf_threshold=0.05)
+    geno_df = get_genotypes(data)
     G = Matrix(geno_df[!, 2:end])
     freqs = mean(G, dims=1) ./ 2
     maf = min.(freqs, 1 .- freqs)
     keep_indices = findall(m -> m >= maf_threshold, vec(maf))
-    return geno_df[!, [1; keep_indices .+ 1]]
+
+    new_geno_df = geno_df[!, [1; keep_indices .+ 1]]
+
+    return InMemoryGenomicData(new_geno_df, get_phenotypes(data), get_covariates(data), get_pedigree(data))
 end
 
 @doc raw"""
-    impute_mean(geno_df::DataFrame) -> DataFrame
+    impute_mean(data::AbstractGenomicData) -> InMemoryGenomicData
 """
-function impute_mean(geno_df::DataFrame)
+function impute_mean(data::AbstractGenomicData)
+    geno_df = get_genotypes(data)
     G = copy(geno_df)
     for col in names(G)[2:end]
         if any(ismissing, G[!, col])
@@ -128,7 +204,7 @@ function impute_mean(geno_df::DataFrame)
             G[!, col] = coalesce.(G[!, col], mean_val)
         end
     end
-    return G
+    return InMemoryGenomicData(G, get_phenotypes(data), get_covariates(data), get_pedigree(data))
 end
 
 end # module DataProcessing

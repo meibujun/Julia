@@ -1,13 +1,13 @@
 # CoreAlgorithm.jl - 核心算法模块
 # ==========================================================
-# 本文件经过性能优化，GBLUPModel 的 fit! 方法现在使用
-# Cholesky 分解来高效求解混合模型方程。
+# 本文件已更新，以与 AbstractGenomicData 架构兼容。
+# 所有函数现在都使用通用的数据访问器。
 # ==========================================================
 
 module CoreAlgorithm
 
 # --- 1. 导入依赖 ---
-using ..GenomicPrediction: AbstractModel, GenomicData, fit!, predict
+using ..GenomicPrediction: AbstractModel, AbstractGenomicData, fit!, predict, get_genotypes, get_phenotypes
 using LinearAlgebra
 using Statistics
 using Distributions
@@ -18,44 +18,29 @@ using StatsBase: Weights, sample
 # --- 2. 模块接口 ---
 export GBLUPModel, BayesAModel, BayesBModel, BayesCModel, BayesRModel, LASSOModel, ElasticNetModel
 
-# --- 3. GBLUP 模型实现 (性能优化后) ---
-@doc raw"""
-    GBLUPModel(lambda::Float64)
-"""
+# --- 3. GBLUP 模型实现 (已适配) ---
 mutable struct GBLUPModel <: AbstractModel
     lambda::Float64; effects::Vector{Float64}; intercept::Float64; allele_freqs::Vector{Float64}
     GBLUPModel(lambda) = new(lambda, [], 0.0, [])
 end
 
-function fit!(model::GBLUPModel, data::GenomicData; rng=nothing)
-    y = data.phenotypes[!, 2]; G = Matrix(data.genotypes[!, 2:end]); n, m = size(G)
+function fit!(model::GBLUPModel, data::AbstractGenomicData; rng=nothing)
+    y = get_phenotypes(data)[!, 2]
 
-    # 1. 中心化基因型矩阵 M
+    # 获取基因型矩阵，如果它是 Pgen 对象，则将其转换为内存中的矩阵
+    geno_obj = get_genotypes(data)
+    G = geno_obj isa DataFrame ? Matrix(geno_obj[!, 2:end]) : convert(Matrix{Float32}, geno_obj)
+
+    n, m = size(G)
+
     p = mean(G, dims=1) ./ 2; model.allele_freqs = vec(p); M = G .- (2 .* p)
-
-    # 2. 构建 GRM (VanRaden, 2008, Method 1)
     denominator = 2 * sum(p .* (1 .- p)); K = (M * M') / denominator
+    LHS = K + I * model.lambda; RHS = y .- mean(y)
 
-    # 3. 构建并求解混合模型方程 (MME)
-    X = ones(n, 1);
-
-    # MME 的左手侧 (LHS): K + I*lambda
-    # 这是一个对称正定矩阵，非常适合使用 Cholesky 分解。
-    LHS = K + I * model.lambda
-
-    # MME 的右手侧 (RHS)
-    RHS = y .- mean(y)
-
-    # 4. 高效求解育种值 u
-    # 使用 Cholesky 分解 (cholesky)，这对于求解对称正定系统
-    # 相比通用求解器 `\` 速度更快且数值更稳定。
     println("正在使用 Cholesky 分解求解 MME...")
-    C = cholesky(LHS)
-    u = C \ RHS
+    C = cholesky(LHS); u = C \ RHS
 
-    # 5. 从育种值反推标记效应
     model.effects = (M' / (M * M')) * u; model.intercept = mean(y)
-
     println("GBLUP 模型训练完成。"); return nothing
 end
 
@@ -65,9 +50,73 @@ function predict(model::GBLUPModel, new_data::DataFrame)
 end
 
 
-# --- 贝叶斯模型 (无变动) ---
-# ... [Omitted for brevity] ...
+# --- 贝叶斯模型 (已适配) ---
 abstract type BayesianModel <: AbstractModel end
+# ... (gibbs_sampler and model structs are unchanged) ...
+function fit!(model::BayesianModel, data::AbstractGenomicData; rng = Random.GLOBAL_RNG)
+    y = get_phenotypes(data)[!, 2]
+    G = Matrix(get_genotypes(data)[!, 2:end])
+
+    if typeof(model) == BayesAModel; model.marker_vars = ones(size(G, 2)); end
+    if typeof(model) == BayesCModel; model.marker_in_model = trues(size(G, 2)); end
+
+    gibbs_sampler!(model, y, G; rng=rng)
+end
+# ... (rest of Bayesian code is omitted for brevity, but it is unchanged) ...
+
+
+# --- LASSO 和 ElasticNet 实现 (已适配) ---
+mutable struct LASSOModel <: AbstractModel
+    lambda::Float64; max_iters::Int; effects::Vector{Float64}; intercept::Float64
+    LASSOModel(; lambda=0.1, max_iters=100) = new(lambda, max_iters, [], 0.0)
+end
+
+function fit!(model::LASSOModel, data::AbstractGenomicData; rng=nothing)
+    y = get_phenotypes(data)[!, 2]
+    G = Matrix(get_genotypes(data)[!, 2:end])
+
+    model.intercept = mean(y); y_centered = y .- model.intercept
+    model.effects = zeros(size(G, 2))
+    lambda1 = model.lambda * size(G, 1)
+
+    coordinate_descent!(model.effects, model.intercept, G, y_centered, lambda1, 0.0, model.max_iters)
+end
+
+mutable struct ElasticNetModel <: AbstractModel
+    lambda::Float64; alpha::Float64; max_iters::Int; effects::Vector{Float64}; intercept::Float64
+    ElasticNetModel(; lambda=0.1, alpha=0.5, max_iters=100) = new(lambda, alpha, max_iters, [], 0.0)
+end
+
+function fit!(model::ElasticNetModel, data::AbstractGenomicData; rng=nothing)
+    y = get_phenotypes(data)[!, 2]
+    G = Matrix(get_genotypes(data)[!, 2:end])
+
+    model.intercept = mean(y); y_centered = y .- model.intercept
+    model.effects = zeros(size(G, 2))
+    n = size(G, 1)
+    lambda1 = n * model.lambda * model.alpha
+    lambda2 = n * model.lambda * (1 - model.alpha)
+
+    coordinate_descent!(model.effects, model.intercept, G, y_centered, lambda1, lambda2, model.max_iters)
+end
+# ... (coordinate_descent and predict are unchanged and omitted for brevity) ...
+
+# --- Full Bayesian and Penalized Regression code (unchanged) ---
+# ... (Omitted for brevity) ...
+function coordinate_descent!(beta::Vector{Float64}, intercept::Float64, G::Matrix, y_centered::Vector, lambda1::Float64, lambda2::Float64, max_iters::Int)
+    n, m = size(G); G_col_sq_sum = vec(sum(G.^2, dims=1)); println("开始坐标下降 (最大迭代次数: $max_iters)...")
+    for iter in 1:max_iters; max_change = 0.0
+        for j in 1:m; old_beta_j = beta[j]; r = y_centered - (G * beta - G[:, j] * beta[j]); rho_j = dot(G[:, j], r)
+            if rho_j > lambda1; beta[j] = (rho_j - lambda1) / (G_col_sq_sum[j] + lambda2)
+            elseif rho_j < -lambda1; beta[j] = (rho_j + lambda1) / (G_col_sq_sum[j] + lambda2)
+            else; beta[j] = 0.0; end
+            max_change = max(max_change, abs(beta[j] - old_beta_j))
+        end
+        if max_change < 1e-4; println("在第 $iter 次迭代收敛。"); break; end
+        if iter == max_iters; println("达到最大迭代次数。"); end
+    end
+end
+function predict(model::Union{LASSOModel, ElasticNetModel}, new_data::DataFrame); G_new = Matrix(new_data[!, 2:end]); return model.intercept .+ G_new * model.effects; end
 function gibbs_sampler!(model::BayesianModel, y::Vector, G::Matrix; rng::AbstractRNG)
     n, m = size(G)
     beta = zeros(m); mu = mean(y); var_e = var(y) * 0.5; var_g = init_genetic_variance(model, var(y))
@@ -103,29 +152,6 @@ mutable struct BayesRModel <: BayesianModel; mixture_pis::Vector{Float64}; mixtu
 init_genetic_variance(model::BayesRModel, v) = v * 0.5
 function sample_marker_variance(model::BayesRModel, j::Int, beta, var_g, rng); log_probs = log.(model.mixture_pis); for k in 1:length(model.mixture_vars); var_k = model.mixture_vars[k] * var_g + 1e-12; log_probs[k] += logpdf(Normal(0, sqrt(var_k)), beta[j]); end; probs = exp.(log_probs .- maximum(log_probs)); probs ./= sum(probs); component = sample(rng, 1:length(probs), Weights(probs)); return model.mixture_vars[component] * var_g + 1e-12; end
 sample_genetic_variance(model::BayesRModel, beta, var_g, rng) = var_g
-function fit!(model::BayesianModel, data::GenomicData; rng = Random.GLOBAL_RNG); y = data.phenotypes[!, 2]; G = Matrix(data.genotypes[!, 2:end]); if typeof(model) == BayesAModel; model.marker_vars = ones(size(G, 2)); end; if typeof(model) == BayesCModel; model.marker_in_model = trues(size(G, 2)); end; gibbs_sampler!(model, y, G; rng=rng); end
 function predict(model::BayesianModel, new_data::DataFrame); return model.intercept .+ Matrix(new_data[!, 2:end]) * model.effects; end
-
-
-# --- LASSO 和 ElasticNet 实现 (无变动) ---
-# ... [Omitted for brevity] ...
-function coordinate_descent!(beta::Vector{Float64}, intercept::Float64, G::Matrix, y_centered::Vector, lambda1::Float64, lambda2::Float64, max_iters::Int)
-    n, m = size(G); G_col_sq_sum = vec(sum(G.^2, dims=1)); println("开始坐标下降 (最大迭代次数: $max_iters)...")
-    for iter in 1:max_iters; max_change = 0.0
-        for j in 1:m; old_beta_j = beta[j]; r = y_centered - (G * beta - G[:, j] * beta[j]); rho_j = dot(G[:, j], r)
-            if rho_j > lambda1; beta[j] = (rho_j - lambda1) / (G_col_sq_sum[j] + lambda2)
-            elseif rho_j < -lambda1; beta[j] = (rho_j + lambda1) / (G_col_sq_sum[j] + lambda2)
-            else; beta[j] = 0.0; end
-            max_change = max(max_change, abs(beta[j] - old_beta_j))
-        end
-        if max_change < 1e-4; println("在第 $iter 次迭代收敛。"); break; end
-        if iter == max_iters; println("达到最大迭代次数。"); end
-    end
-end
-mutable struct LASSOModel <: AbstractModel; lambda::Float64; max_iters::Int; effects::Vector{Float64}; intercept::Float64; LASSOModel(; lambda=0.1, max_iters=100) = new(lambda, max_iters, [], 0.0); end
-function fit!(model::LASSOModel, data::GenomicData; rng=nothing); y = data.phenotypes[!, 2]; G = Matrix(data.genotypes[!, 2:end]); model.intercept = mean(y); y_centered = y .- model.intercept; model.effects = zeros(size(G, 2)); lambda1 = model.lambda * size(G, 1); coordinate_descent!(model.effects, model.intercept, G, y_centered, lambda1, 0.0, model.max_iters); end
-mutable struct ElasticNetModel <: AbstractModel; lambda::Float64; alpha::Float64; max_iters::Int; effects::Vector{Float64}; intercept::Float64; ElasticNetModel(; lambda=0.1, alpha=0.5, max_iters=100) = new(lambda, alpha, max_iters, [], 0.0); end
-function fit!(model::ElasticNetModel, data::GenomicData; rng=nothing); y = data.phenotypes[!, 2]; G = Matrix(data.genotypes[!, 2:end]); model.intercept = mean(y); y_centered = y .- model.intercept; model.effects = zeros(size(G, 2)); n = size(G, 1); lambda1 = n * model.lambda * model.alpha; lambda2 = n * model.lambda * (1 - model.alpha); coordinate_descent!(model.effects, model.intercept, G, y_centered, lambda1, lambda2, model.max_iters); end
-function predict(model::Union{LASSOModel, ElasticNetModel}, new_data::DataFrame); G_new = Matrix(new_data[!, 2:end]); return model.intercept .+ G_new * model.effects; end
 
 end # module CoreAlgorithm
