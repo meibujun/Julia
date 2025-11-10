@@ -1,0 +1,23 @@
+# Project.toml
+name = "GenomicPro"
+uuid = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+authors = ["GenomicPro Development Team"]
+version = "0.1.0"
+
+[deps]
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
+Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
+Mmap = "a63ad114-7e13-5084-954f-fe012c677804"
+ProgressMeter = "92933f4c-e287-5a05-a399-4b506db050ca"
+CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
+Lux = "b2108857-7c20-4412-a14c-986f62d294a5"
+Optimisers = "3a2145e1-a3c6-433b-a48e-927c1f82e88a"
+Zygote = "e88e6eb3-aa80-5325-afca-941959d7151f"
+ArgParse = "c7e460c6-2fb1-5374-8c6c-847e6a715a3a"
+Distributions = "31c24e10-a181-5473-b8eb-cc853c613294"
+Plots = "91a5bc22-355b-5633-9147-28e6221c5f3e"
+
+[compat]
+julia = "1.11"
