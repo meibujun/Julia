@@ -1,6 +1,6 @@
 # src/GenomicProPredict/bayesrc.jl
 
-using Distributions
+using Distributions, LinearAlgebra
 
 struct BayesRCModel <: AbstractBayesianModel
     base_model::BayesRModel
@@ -34,6 +34,9 @@ function run_bayesrc_mcmc(model::BayesRCModel,
     state = initialize_mcmc_state(model.base_model, genotypes, phenotypes)
     alpha = zeros(model.n_annotations, model.base_model.n_components)
 
+    # Pre-compute XtX for efficiency
+    XtX = [dot(genotypes[:, j], genotypes[:, j]) for j in 1:n_markers]
+
     # MCMC Loop
     for iter in 1:n_iterations
         # Update mixing proportions based on annotations
@@ -62,14 +65,39 @@ function run_bayesrc_mcmc(model::BayesRCModel,
 end
 
 function compute_mixing_proportions(alpha::Matrix{Float64}, annotations::Matrix{Float64})
-    # logit(π_jk) = μ_k + Σ_l α_lk * annotation_jl
-    # This is a simplified placeholder
-    return ones(size(alpha, 2), size(annotations, 1)) ./ size(alpha, 2)
+    logits = annotations * alpha
+    π = exp.(logits) ./ sum(exp.(logits), dims=2)
+    return π'
 end
 
 function sample_annotation_effects!(alpha::Matrix{Float64}, state::MCMCState, model::BayesRCModel, annotations::Matrix{Float64})
-    # This is a simplified placeholder for a Metropolis-Hastings step
-    # A full implementation would propose a new alpha, calculate the acceptance
-    # probability, and update alpha based on a random draw.
-    return nothing
+    # Metropolis-Hastings for each alpha parameter
+    for l in 1:model.n_annotations
+        for k in 1:model.base_model.n_components
+            # Propose a new value for alpha[l, k]
+            proposal = alpha[l, k] + randn() * 0.1
+
+            # Calculate acceptance probability
+            current_log_lik = log_likelihood_alpha(alpha, state, annotations)
+
+            alpha_proposal = copy(alpha)
+            alpha_proposal[l, k] = proposal
+            proposal_log_lik = log_likelihood_alpha(alpha_proposal, state, annotations)
+
+            acceptance_prob = min(1, exp(proposal_log_lik - current_log_lik))
+
+            if rand() < acceptance_prob
+                alpha[l, k] = proposal
+            end
+        end
+    end
+end
+
+function log_likelihood_alpha(alpha::Matrix{Float64}, state::MCMCState, annotations::Matrix{Float64})
+    π = compute_mixing_proportions(alpha, annotations)
+    log_lik = 0.0
+    for j in 1:length(state.component_assignments)
+        log_lik += log(π[state.component_assignments[j], j])
+    end
+    return log_lik
 end

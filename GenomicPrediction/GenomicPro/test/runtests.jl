@@ -1,6 +1,7 @@
 using Test
-using GenomicPrediction
+using GenomicPro
 
-@testset "GenomicPrediction.jl" begin
-    @test 1 == 1
+@testset "GenomicPro.jl" begin
+    include("twobit_test.jl")
+    include("gblup_test.jl")
 end

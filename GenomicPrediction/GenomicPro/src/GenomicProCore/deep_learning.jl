@@ -1,6 +1,6 @@
 # src/GenomicProPredict/deep_learning.jl
 
-using Lux, Optimisers, Random, CUDA, Zygote
+using Lux, Optimisers, Random, CUDA, Zygote, NNlib
 
 abstract type AbstractDeepLearningModel end
 
@@ -8,23 +8,26 @@ struct LocallyConnectedLayer{F} <: Lux.AbstractExplicitLayer
     in_channels::Int
     out_channels::Int
     kernel_size::Int
+    stride::Int
     activation::F
 end
 
-function LocallyConnectedLayer(in_channels::Int, out_channels::Int, kernel_size::Int; activation::F=identity) where {F}
-    return LocallyConnectedLayer{F}(in_channels, out_channels, kernel_size, activation)
+function LocallyConnectedLayer(in_channels::Int, out_channels::Int, kernel_size::Int; stride::Int=1, activation::F=identity) where {F}
+    return LocallyConnectedLayer{F}(in_channels, out_channels, kernel_size, stride, activation)
 end
 
 function Lux.initialparameters(rng::AbstractRNG, l::LocallyConnectedLayer)
-    weight = randn(rng, l.out_channels, l.in_channels, l.kernel_size)
+    # Each location has its own kernel
+    weight = randn(rng, l.out_channels, l.in_channels * l.kernel_size, (l.in_channels - l.kernel_size) ÷ l.stride + 1)
     bias = zeros(rng, l.out_channels, 1)
     return (weight=weight, bias=bias)
 end
 
 function (l::LocallyConnectedLayer)(x, ps, st)
-    # Simplified implementation
-    # A full implementation would perform a locally connected operation
-    return l.activation.(x * ps.weight) .+ ps.bias, st
+    # A proper implementation would be more complex, involving unfolding the input
+    # and performing a batched matrix multiplication. This is still a simplified placeholder.
+    # For a real implementation, one would likely need to write a custom CUDA kernel.
+    return l.activation.(ps.weight .* x) .+ ps.bias, st
 end
 
 struct DeepGBLUPModel <: AbstractDeepLearningModel
@@ -115,6 +118,8 @@ function train_deep_gblup!(model::DeepGBLUPModel,
         if val_loss < best_val_loss
             best_val_loss = val_loss
             patience_counter = 0
+            model.parameters[:ps] = ps
+            model.parameters[:st] = st
         else
             patience_counter += 1
         end
@@ -124,8 +129,6 @@ function train_deep_gblup!(model::DeepGBLUPModel,
         end
     end
 
-    model.parameters[:ps] = ps
-    model.parameters[:st] = st
     model.parameters[:u_gblup] = u_gblup
 end
 

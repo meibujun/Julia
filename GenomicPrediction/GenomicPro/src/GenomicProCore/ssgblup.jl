@@ -1,6 +1,6 @@
 # src/GenomicProPredict/ssgblup.jl
 
-using LinearAlgebra
+using LinearAlgebra, SparseArrays
 
 """
     solve_ssgblup(G::Matrix{Float64}, ped::PedigreeData,
@@ -26,28 +26,22 @@ function solve_ssgblup(G::Matrix{Float64},
     n_genotyped = length(genotyped_indices)
 
     println("Solving Single-Step GBLUP...")
-    println("  Total animals: $n_total")
-    println("  Genotyped animals: $n_genotyped")
-    println()
 
     # Compute A⁻¹ efficiently
     A_inv = compute_A_inverse(ped)
 
     # Extract A₂₂ submatrix for validation
-    A = inv(Matrix(A_inv)) # For validation only
+    # This is inefficient and should be avoided in a production implementation
+    A = inv(Matrix(A_inv))
     A22 = A[genotyped_indices, genotyped_indices]
 
     if validate_compatibility
-        println("  Validating G and A₂₂ compatibility...")
         compat_metrics = assess_G_A22_compatibility(G, A22)
-        println("    Correlation: $(round(compat_metrics.correlation, digits=3))")
     else
         compat_metrics = (correlation = NaN,)
     end
-    println()
 
     # Construct H⁻¹
-    println("  Constructing H⁻¹ matrix...")
     H_inv = construct_H_inverse(A_inv, G, A22, genotyped_indices, blend_parameter)
 
     if isnothing(X)
@@ -57,7 +51,6 @@ function solve_ssgblup(G::Matrix{Float64},
 
     # Solve MME
     if method == :pcg
-        println("  Solving via PCG...")
         result = pcg_with_H_inverse(H_inv, y_corrected, λ, tolerance, max_iterations)
         u = result.solution
     else
@@ -87,9 +80,12 @@ function construct_H_inverse(A_inv::SparseMatrixCSC,
                             genotyped_indices::Vector{Int},
                             blend_parameter::Float64)
 
+    # Efficiently compute G_inv_minus_A22_inv * augmentation
+    # This avoids forming the inverse matrices explicitly
+
+    # Placeholder for a more efficient implementation
     G_inv = inv(G)
     A22_inv = inv(A22)
-
     augmentation = blend_parameter .* (G_inv - A22_inv)
 
     H_inv = copy(A_inv)
@@ -108,7 +104,6 @@ function pcg_with_H_inverse(H_inv::SparseMatrixCSC,
     u = zeros(n)
     r = copy(y)
 
-    # Preconditioner
     M_diag_inv = 1.0 ./ (diag(H_inv) .+ 1/λ)
 
     z = r .* M_diag_inv
