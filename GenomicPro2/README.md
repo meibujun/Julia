@@ -86,6 +86,19 @@ println("Residual variance: ", result.var_e)
 # Predict genomic breeding values
 predictions = predict(model, geno)
 println("Mean GEBV: ", mean(predictions))
+
+# Or use BayesR for sparse genetic architecture
+model_bayesr = BayesRModel(n_iter=50000, burn_in=20000)
+fit!(model_bayesr, geno, pheno)
+
+# Get posterior inclusion probabilities and effect sizes
+result = model_bayesr.result
+println("Heritability: ", result.heritability)
+println("SNPs with PIP > 0.5: ", sum(result.marker_pip .> 0.5))
+
+# Identify top QTLs
+top_snps = sortperm(result.marker_pip, rev=true)[1:10]
+println("Top 10 SNPs: ", marker_ids[top_snps])
 ```
 
 ---
@@ -128,9 +141,15 @@ println("Mean GEBV: ", mean(predictions))
   - [x] 2-4x speedup on typical systems
   - [x] Thread control options
   - [x] Performance benchmarking tools
+- [x] **BayesR Model**
+  - [x] Bayesian variable selection with mixture priors
+  - [x] Gibbs sampling MCMC implementation
+  - [x] Posterior inclusion probabilities (PIP)
+  - [x] Effect size estimation with uncertainty
+  - [x] Variance component estimation
+  - [x] Comprehensive tests and examples
+- [ ] LD pruning functionality
 - [ ] VCF file format support
-- [ ] BayesR Bayesian variable selection
-- [ ] Performance profiling and benchmarking
 - [ ] GPU acceleration (CUDA)
 
 ### 📋 Future Phases
