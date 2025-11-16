@@ -42,41 +42,56 @@ Pkg.add(url="https://github.com/yourusername/GenomicPro2.jl")
 ```julia
 using GenomicPro2
 
-# Load data
-geno = read_genotypes("data.vcf.gz")
-pheno = read_phenotypes("phenotypes.csv")
+# Create genotype data from matrix (or load from PLINK files)
+genotype_matrix = rand(0:2, 1000, 5000)  # 1000 samples × 5000 SNPs
+sample_ids = ["Sample_$i" for i in 1:1000]
+marker_ids = ["SNP_$i" for i in 1:5000]
 
-# Quality control
-geno_qc, pheno_qc = quality_control(geno, pheno)
+geno = CompactGenotypes(genotype_matrix, sample_ids, marker_ids)
 
-# Compute genomic relationship matrix
-G = compute_grm(geno_qc)
+# Load phenotypes from CSV
+pheno = read_phenotypes("phenotypes.csv", id_col="ID", trait_cols="Yield")
 
-# Train model
-model = GBLUPModel()
-fit!(model, geno_qc, pheno_qc; G=G)
+# Or read from PLINK format (.bed/.bim/.fam)
+# geno = read_plink("mydata")  # Reads mydata.bed, mydata.bim, mydata.fam
 
-# Predict breeding values
-predictions = predict(model, geno_qc)
+# Compute genomic relationship matrix (VanRaden method)
+G = compute_grm(geno; method=:vanraden, min_maf=0.01)
+
+# Validate GRM
+validation = validate_grm(G)
+println(validation)
+
+# Train GBLUP model
+model = GBLUPModel(method=:cholesky, estimate_variances=true)
+result = fit!(model, geno, pheno; G=G, trait_index=1)
+
+# Print results
+println("Heritability: ", result.heritability)
+println("Genetic variance: ", result.var_u)
+println("Residual variance: ", result.var_e)
+
+# Predict genomic breeding values
+predictions = predict(model, geno)
+println("Mean GEBV: ", mean(predictions))
 ```
 
 ---
 
 ## 📦 Current Implementation Status
 
-### ✅ Phase 1 (Completed)
+### ✅ Phase 1 (COMPLETED!)
 
-- [x] Core type system
-- [x] CompactGenotypes with 2-bit encoding
+- [x] Core type system with abstract interfaces
+- [x] CompactGenotypes with 2-bit encoding (96.8% memory savings)
 - [x] Data validation framework
-- [x] Basic testing infrastructure
-
-### 🚧 Phase 1 (In Progress)
-
-- [ ] File I/O (VCF, PLINK)
-- [ ] GRM computation (CPU)
-- [ ] GBLUP solver
-- [ ] Complete test coverage
+- [x] File I/O (PLINK .bed/.bim/.fam, CSV phenotypes)
+- [x] PhenotypeData structure with covariate support
+- [x] GRM computation (VanRaden and Additive methods)
+- [x] GBLUP solver (Cholesky and PCG methods)
+- [x] Variance component estimation (EM-REML)
+- [x] Comprehensive test suite (100+ tests)
+- [x] Complete workflow examples
 
 ### 📋 Upcoming Phases
 

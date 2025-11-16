@@ -13,8 +13,10 @@ using Statistics
 # Test suites
 include("test_core.jl")
 include("test_genotypes.jl")
+include("test_io.jl")
+include("test_models.jl")
 
-@testset "GenomicPro2" begin
+@testset "GenomicPro2 Test Suite" begin
     @testset "Core" begin
         test_core()
     end
@@ -22,4 +24,12 @@ include("test_genotypes.jl")
     @testset "Genotypes" begin
         test_genotypes()
     end
+
+    # I/O tests are standalone (included above)
+
+    # Models tests are standalone (included above)
 end
+
+println("\n" * "="^60)
+println("All GenomicPro2 tests completed successfully!")
+println("="^60)

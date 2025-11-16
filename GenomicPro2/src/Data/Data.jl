@@ -31,6 +31,10 @@ using ..Core
 # Export types
 export CompactGenotypes
 
+# Export functions
+export decode_to_matrix, subset_samples, subset_markers, subset
+export minor_allele_frequency, to_matrix, memory_usage
+
 # Include submodules
 include("genotypes.jl")
 

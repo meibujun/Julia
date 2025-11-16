@@ -64,15 +64,38 @@ using .Core
 include("Data/Data.jl")
 using .Data
 
+# Include I/O modules
+include("IO/IO.jl")
+using .IO
+
+# Include Models modules
+include("Models/Models.jl")
+using .Models
+
 # Export core types
 export AbstractGenomicData, AbstractGenotypeData, AbstractPhenotypeData
 export ValidationResult
 
 # Export data types
-export CompactGenotypes
+export CompactGenotypes, PhenotypeData
 
-# Export functions
+# Export core functions
 export n_samples, n_markers, sample_ids, marker_ids
-export validate
+export validate, allele_frequencies, missing_rate
+
+# Export data manipulation functions
+export subset_samples, subset_markers, subset
+export minor_allele_frequency, to_matrix, memory_usage
+
+# Export I/O functions
+export read_plink, write_plink
+export read_phenotypes, write_phenotypes
+export merge_genotype_phenotype
+
+# Export Models
+export GBLUPModel, GBLUPResult
+export fit!, predict
+export compute_grm, compute_grm_vanraden, compute_grm_additive
+export validate_grm
 
 end # module GenomicPro2

@@ -74,7 +74,7 @@ result = validate(geno)
 - [`decode_genotypes`](@ref): Convert 2-bit encoding back to matrix
 - [`to_matrix`](@ref): Extract as standard matrix
 """
-struct CompactGenotypes{T<:Integer} <: AbstractGenotypeData{T}
+mutable struct CompactGenotypes{T<:Integer} <: AbstractGenotypeData{T}
     # Core data (2-bit encoded)
     data::Vector{UInt8}
 
@@ -97,6 +97,9 @@ struct CompactGenotypes{T<:Integer} <: AbstractGenotypeData{T}
 
     # Cached statistics (computed lazily)
     allele_freqs::Vector{Float64}
+
+    # Additional metadata (family info, etc.)
+    metadata::Dict{Symbol, Any}
 
     """
         CompactGenotypes(data, sample_ids, marker_ids; kwargs...)
@@ -175,7 +178,8 @@ struct CompactGenotypes{T<:Integer} <: AbstractGenotypeData{T}
             pos,
             ref,
             alt,
-            freqs
+            freqs,
+            Dict{Symbol, Any}()  # Empty metadata dict
         )
     end
 end
@@ -564,6 +568,168 @@ function memory_usage(cg::CompactGenotypes)
         metadata = metadata_bytes,
         total = total_bytes,
         naive = naive_bytes,
-        savings = savings
+        original = naive_bytes,
+        savings = savings,
+        compression_ratio = naive_bytes / total_bytes
     )
+end
+
+"""
+    decode_to_matrix(cg::CompactGenotypes) -> Matrix{Union{UInt8, Missing}}
+
+Decode 2-bit encoded genotypes to a standard matrix format.
+
+Alias for decode_genotypes. Used by I/O functions.
+"""
+decode_to_matrix(cg::CompactGenotypes) = decode_genotypes(cg)
+
+"""
+    subset_samples(cg::CompactGenotypes, indices::AbstractVector{Int}) -> CompactGenotypes
+
+Create a new CompactGenotypes with a subset of samples.
+
+# Arguments
+- `cg`: CompactGenotypes object
+- `indices`: Vector of sample indices to keep
+
+# Returns
+New CompactGenotypes with selected samples
+
+# Example
+```julia
+# Keep first 100 samples
+geno_subset = subset_samples(geno, 1:100)
+
+# Keep specific samples
+keep_idx = [1, 5, 10, 20]
+geno_subset = subset_samples(geno, keep_idx)
+```
+"""
+function subset_samples(cg::CompactGenotypes{T}, indices::AbstractVector{Int}) where T
+    # Validate indices
+    if any(i -> i < 1 || i > cg.n_samples, indices)
+        throw(BoundsError(cg, indices))
+    end
+
+    # Decode genotypes
+    full_data = decode_genotypes(cg)
+
+    # Subset data
+    subset_data = full_data[indices, :]
+
+    # Create new CompactGenotypes
+    return CompactGenotypes(
+        subset_data,
+        cg.sample_ids[indices],
+        cg.marker_ids;
+        chromosome = cg.chromosome,
+        position = cg.position,
+        ref_allele = cg.ref_allele,
+        alt_allele = cg.alt_allele
+    )
+end
+
+"""
+    subset_markers(cg::CompactGenotypes, indices::AbstractVector{Int}) -> CompactGenotypes
+
+Create a new CompactGenotypes with a subset of markers.
+
+# Arguments
+- `cg`: CompactGenotypes object
+- `indices`: Vector of marker indices to keep
+
+# Returns
+New CompactGenotypes with selected markers
+
+# Example
+```julia
+# Keep first 1000 markers
+geno_subset = subset_markers(geno, 1:1000)
+
+# Filter by MAF
+maf = minor_allele_frequency(geno)
+keep_idx = findall(maf .>= 0.01)
+geno_filtered = subset_markers(geno, keep_idx)
+```
+"""
+function subset_markers(cg::CompactGenotypes{T}, indices::AbstractVector{Int}) where T
+    # Validate indices
+    if any(i -> i < 1 || i > cg.n_markers, indices)
+        throw(BoundsError(cg, indices))
+    end
+
+    # Decode genotypes
+    full_data = decode_genotypes(cg)
+
+    # Subset data
+    subset_data = full_data[:, indices]
+
+    # Create new CompactGenotypes
+    return CompactGenotypes(
+        subset_data,
+        cg.sample_ids,
+        cg.marker_ids[indices];
+        chromosome = cg.chromosome[indices],
+        position = cg.position[indices],
+        ref_allele = cg.ref_allele[indices],
+        alt_allele = cg.alt_allele[indices]
+    )
+end
+
+"""
+    subset(cg::CompactGenotypes, sample_indices, marker_indices) -> CompactGenotypes
+
+Create a new CompactGenotypes with subsets of both samples and markers.
+
+# Example
+```julia
+geno_subset = subset(geno, 1:100, 1:1000)
+```
+"""
+function subset(cg::CompactGenotypes{T},
+                sample_indices::AbstractVector{Int},
+                marker_indices::AbstractVector{Int}) where T
+    # Validate indices
+    if any(i -> i < 1 || i > cg.n_samples, sample_indices)
+        throw(BoundsError(cg, sample_indices))
+    end
+    if any(i -> i < 1 || i > cg.n_markers, marker_indices)
+        throw(BoundsError(cg, marker_indices))
+    end
+
+    # Decode genotypes
+    full_data = decode_genotypes(cg)
+
+    # Subset data
+    subset_data = full_data[sample_indices, marker_indices]
+
+    # Create new CompactGenotypes
+    return CompactGenotypes(
+        subset_data,
+        cg.sample_ids[sample_indices],
+        cg.marker_ids[marker_indices];
+        chromosome = cg.chromosome[marker_indices],
+        position = cg.position[marker_indices],
+        ref_allele = cg.ref_allele[marker_indices],
+        alt_allele = cg.alt_allele[marker_indices]
+    )
+end
+
+"""
+    minor_allele_frequency(cg::CompactGenotypes) -> Vector{Float64}
+
+Calculate minor allele frequency for each marker.
+
+# Returns
+Vector of MAF values (always ≤ 0.5)
+
+# Example
+```julia
+maf = minor_allele_frequency(geno)
+println("Mean MAF: ", mean(maf))
+```
+"""
+function minor_allele_frequency(cg::CompactGenotypes)
+    freqs = allele_frequencies(cg)
+    return min.(freqs, 1 .- freqs)
 end
