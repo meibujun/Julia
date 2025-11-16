@@ -55,6 +55,18 @@ pheno = read_phenotypes("phenotypes.csv", id_col="ID", trait_cols="Yield")
 # Or read from PLINK format (.bed/.bim/.fam)
 # geno = read_plink("mydata")  # Reads mydata.bed, mydata.bim, mydata.fam
 
+# Apply quality control
+geno_qc = quality_control(geno;
+    min_maf = 0.01,
+    max_missing_per_marker = 0.1,
+    max_missing_per_sample = 0.1,
+    hwe_pvalue = 1e-6
+)
+
+# Generate QC report
+report = qc_report(geno_qc)
+println(report)
+
 # Compute genomic relationship matrix (VanRaden method)
 G = compute_grm(geno; method=:vanraden, min_maf=0.01)
 
@@ -93,7 +105,23 @@ println("Mean GEBV: ", mean(predictions))
 - [x] Comprehensive test suite (100+ tests)
 - [x] Complete workflow examples
 
-### 📋 Upcoming Phases
+### 🚧 Phase 2 (IN PROGRESS!)
+
+- [x] **Quality Control Module**
+  - [x] MAF, missing rate, call rate filtering
+  - [x] Hardy-Weinberg equilibrium testing
+  - [x] Heterozygosity rate analysis
+  - [x] Inbreeding coefficient calculation
+  - [x] Duplicate sample detection
+  - [x] Comprehensive QC reporting
+  - [x] 40+ QC tests
+- [ ] VCF file format support
+- [ ] BayesR Bayesian variable selection
+- [ ] Performance profiling and benchmarking
+- [ ] Multi-threading for GRM computation
+- [ ] GPU acceleration (CUDA)
+
+### 📋 Future Phases
 
 - **Phase 2**: Advanced algorithms (BayesR, Deep GBLUP, GPU acceleration)
 - **Phase 3**: Production features (API, monitoring, deployment)

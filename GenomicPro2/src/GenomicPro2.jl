@@ -72,6 +72,10 @@ using .IO
 include("Models/Models.jl")
 using .Models
 
+# Include QC modules
+include("QC/QC.jl")
+using .QC
+
 # Export core types
 export AbstractGenomicData, AbstractGenotypeData, AbstractPhenotypeData
 export ValidationResult
@@ -97,5 +101,12 @@ export GBLUPModel, GBLUPResult
 export fit!, predict
 export compute_grm, compute_grm_vanraden, compute_grm_additive
 export validate_grm
+
+# Export QC
+export quality_control, qc_report, QCReport, QCFilters
+export filter_maf, filter_missing_markers, filter_missing_samples, filter_hwe
+export hardy_weinberg_test, call_rate, heterozygosity_rate
+export expected_heterozygosity, inbreeding_coefficient
+export identify_duplicates, compute_sample_correlation
 
 end # module GenomicPro2
