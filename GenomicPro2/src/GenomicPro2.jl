@@ -102,6 +102,11 @@ export fit!, predict
 export compute_grm, compute_grm_vanraden, compute_grm_additive
 export validate_grm
 
+# Export Cross-validation
+export CVResult
+export kfold_cv, loo_cv, random_cv
+export create_folds
+
 # Export QC
 export quality_control, qc_report, QCReport, QCFilters
 export filter_maf, filter_missing_markers, filter_missing_samples, filter_hwe

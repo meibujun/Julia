@@ -15,6 +15,7 @@ include("test_core.jl")
 include("test_genotypes.jl")
 include("test_io.jl")
 include("test_models.jl")
+include("test_crossvalidation.jl")
 include("test_qc.jl")
 
 @testset "GenomicPro2 Test Suite" begin
@@ -29,6 +30,8 @@ include("test_qc.jl")
     # I/O tests are standalone (included above)
 
     # Models tests are standalone (included above)
+
+    # Cross-validation tests are standalone (included above)
 
     # QC tests are standalone (included above)
 end

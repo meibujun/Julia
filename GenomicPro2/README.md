@@ -115,6 +115,13 @@ println("Mean GEBV: ", mean(predictions))
   - [x] Duplicate sample detection
   - [x] Comprehensive QC reporting
   - [x] 40+ QC tests
+- [x] **Cross-Validation Framework**
+  - [x] k-fold cross-validation
+  - [x] Leave-one-out cross-validation
+  - [x] Random sub-sampling validation
+  - [x] Comprehensive metrics (correlation, R², MSE, MAE, bias)
+  - [x] Per-fold analysis
+  - [x] 25+ CV tests
 - [ ] VCF file format support
 - [ ] BayesR Bayesian variable selection
 - [ ] Performance profiling and benchmarking

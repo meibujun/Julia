@@ -29,6 +29,7 @@ using LinearAlgebra
 using Statistics
 using SparseArrays
 using Printf
+using Random
 
 using ..Core
 using ..Data
@@ -36,6 +37,7 @@ using ..Data
 # Include submodules
 include("grm.jl")
 include("gblup.jl")
+include("crossvalidation.jl")
 
 # Export GRM functions
 export compute_grm, compute_grm_vanraden, compute_grm_additive
@@ -44,5 +46,10 @@ export center_genotypes, scale_genotypes
 # Export GBLUP
 export GBLUPModel, fit!, predict
 export GBLUPResult
+
+# Export Cross-validation
+export CVResult
+export kfold_cv, loo_cv, random_cv
+export create_folds
 
 end # module Models
