@@ -76,6 +76,10 @@ using .Models
 include("QC/QC.jl")
 using .QC
 
+# Include Utils modules
+include("Utils/Utils.jl")
+using .Utils
+
 # Export core types
 export AbstractGenomicData, AbstractGenotypeData, AbstractPhenotypeData
 export ValidationResult
@@ -128,5 +132,9 @@ export LDResult, LDMatrix
 export compute_ld_r2, compute_ld_dprime, compute_ld_full
 export ld_prune_window, ld_prune_pairwise
 export compute_ld_matrix
+
+# Export Utils
+export GenotypeDataSummary, PhenotypeDataSummary
+export summarize, compare_datasets, detect_outliers, marker_quality_summary
 
 end # module GenomicPro2
