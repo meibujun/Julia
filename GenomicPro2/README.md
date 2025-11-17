@@ -99,6 +99,11 @@ println("SNPs with PIP > 0.5: ", sum(result.marker_pip .> 0.5))
 # Identify top QTLs
 top_snps = sortperm(result.marker_pip, rev=true)[1:10]
 println("Top 10 SNPs: ", marker_ids[top_snps])
+
+# LD pruning before analysis
+keep_idx = ld_prune_window(geno; window_size=50, r2_threshold=0.8)
+geno_pruned = subset_markers(geno, keep_idx)
+println("Markers after LD pruning: ", geno_pruned.n_markers)
 ```
 
 ---
@@ -148,7 +153,14 @@ println("Top 10 SNPs: ", marker_ids[top_snps])
   - [x] Effect size estimation with uncertainty
   - [x] Variance component estimation
   - [x] Comprehensive tests and examples
-- [ ] LD pruning functionality
+- [x] **LD Pruning**
+  - [x] Window-based pruning algorithm
+  - [x] Pairwise LD pruning
+  - [x] r² and D' computation
+  - [x] Chromosome-aware pruning
+  - [x] LD matrix computation
+  - [x] Distance-based constraints
+  - [x] Comprehensive tests and examples
 - [ ] VCF file format support
 - [ ] GPU acceleration (CUDA)
 

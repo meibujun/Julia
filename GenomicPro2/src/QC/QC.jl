@@ -9,7 +9,7 @@ Implements standard QC procedures:
 - Hardy-Weinberg Equilibrium (HWE) testing
 - Call rate filtering
 - Sample duplicate detection
-- LD pruning (future)
+- Linkage Disequilibrium (LD) pruning
 
 ## Examples
 
@@ -43,8 +43,15 @@ export hardy_weinberg_test, call_rate
 export identify_duplicates, compute_sample_correlation
 export QCReport, QCFilters
 
+# Export LD pruning functions
+export LDResult, LDMatrix
+export compute_ld_r2, compute_ld_dprime, compute_ld_full
+export ld_prune_window, ld_prune_pairwise
+export compute_ld_matrix
+
 include("filters.jl")
 include("statistics.jl")
 include("reports.jl")
+include("ld_pruning.jl")
 
 end # module QC

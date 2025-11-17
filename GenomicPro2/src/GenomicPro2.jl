@@ -121,4 +121,10 @@ export hardy_weinberg_test, call_rate, heterozygosity_rate
 export expected_heterozygosity, inbreeding_coefficient
 export identify_duplicates, compute_sample_correlation
 
+# Export LD Pruning
+export LDResult, LDMatrix
+export compute_ld_r2, compute_ld_dprime, compute_ld_full
+export ld_prune_window, ld_prune_pairwise
+export compute_ld_matrix
+
 end # module GenomicPro2
