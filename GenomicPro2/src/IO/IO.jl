@@ -5,6 +5,7 @@ File input/output operations for genomic data.
 
 Supported formats:
 - PLINK (.bed/.bim/.fam)
+- VCF/BCF (.vcf/.vcf.gz)
 - Phenotype CSV files
 - Simple text-based genotype files
 
@@ -31,10 +32,12 @@ using Printf
 # File format readers
 include("plink.jl")
 include("phenotypes.jl")
+include("vcf.jl")
 
 # Export public API
 export read_plink, write_plink
 export read_phenotypes, write_phenotypes
-export PlinkFiles, PhenotypeData
+export read_vcf, write_vcf
+export PlinkFiles, PhenotypeData, VCFHeader
 
 end # module IO

@@ -104,6 +104,10 @@ println("Top 10 SNPs: ", marker_ids[top_snps])
 keep_idx = ld_prune_window(geno; window_size=50, r2_threshold=0.8)
 geno_pruned = subset_markers(geno, keep_idx)
 println("Markers after LD pruning: ", geno_pruned.n_markers)
+
+# Read VCF files
+geno_vcf = read_vcf("data.vcf.gz"; regions=["1"], min_qual=30.0)
+write_vcf("output.vcf", geno_vcf)
 ```
 
 ---
@@ -161,7 +165,14 @@ println("Markers after LD pruning: ", geno_pruned.n_markers)
   - [x] LD matrix computation
   - [x] Distance-based constraints
   - [x] Comprehensive tests and examples
-- [ ] VCF file format support
+- [x] **VCF Format Support**
+  - [x] VCF file reading (.vcf and .vcf.gz)
+  - [x] VCF file writing
+  - [x] Flexible variant and sample filtering
+  - [x] Multi-allelic variant handling
+  - [x] Missing data imputation
+  - [x] VCF to PLINK conversion
+  - [x] Comprehensive tests and examples
 - [ ] GPU acceleration (CUDA)
 
 ### 📋 Future Phases

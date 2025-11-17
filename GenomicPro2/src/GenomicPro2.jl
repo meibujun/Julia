@@ -94,7 +94,9 @@ export minor_allele_frequency, to_matrix, memory_usage
 # Export I/O functions
 export read_plink, write_plink
 export read_phenotypes, write_phenotypes
+export read_vcf, write_vcf
 export merge_genotype_phenotype
+export VCFHeader
 
 # Export Models
 export GBLUPModel, GBLUPResult
