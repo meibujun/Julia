@@ -34,6 +34,9 @@ using Random
 using ..Core
 using ..Data
 
+# Include abstract model interface first
+include("abstract_model.jl")
+
 # Include submodules
 include("grm.jl")
 include("gblup.jl")
@@ -43,6 +46,16 @@ include("bayesr.jl")
 include("bayescpi.jl")
 include("rkhs.jl")
 include("deepgblup.jl")
+
+# Export Abstract Model Interface
+export AbstractGenomicModel, ModelType, ModelStatus
+export LINEAR_MODEL, BAYESIAN_MODEL, KERNEL_MODEL, DEEP_LEARNING, ENSEMBLE_MODEL
+export NOT_FITTED, FITTING, FITTED, FAILED
+export fit!, predict, model_name, model_type
+export is_fitted, score, get_hyperparameters, set_hyperparameters!
+export feature_importance, get_fitted_values, get_variance_components, heritability
+export compare_models, select_best_model
+export EnsembleModel, print_model_summary
 
 # Export GRM functions
 export compute_grm, compute_grm_vanraden, compute_grm_additive

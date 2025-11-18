@@ -159,6 +159,42 @@ overall_start = time()
             rethrow(e)
         end
     end
+
+    # GWAS tests
+    @testset "GWAS Analysis" begin
+        start_time = time()
+        try
+            include("test_gwas.jl")
+            test_results["GWAS"] = (passed=true, time=time()-start_time)
+        catch e
+            test_results["GWAS"] = (passed=false, time=time()-start_time, error=e)
+            rethrow(e)
+        end
+    end
+
+    # Configuration tests
+    @testset "Configuration Management" begin
+        start_time = time()
+        try
+            include("test_config.jl")
+            test_results["Config"] = (passed=true, time=time()-start_time)
+        catch e
+            test_results["Config"] = (passed=false, time=time()-start_time, error=e)
+            rethrow(e)
+        end
+    end
+
+    # Logging tests
+    @testset "Logging Framework" begin
+        start_time = time()
+        try
+            include("test_logging.jl")
+            test_results["Logging"] = (passed=true, time=time()-start_time)
+        catch e
+            test_results["Logging"] = (passed=false, time=time()-start_time, error=e)
+            rethrow(e)
+        end
+    end
 end
 
 overall_time = time() - overall_start

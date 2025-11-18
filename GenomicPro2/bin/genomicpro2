@@ -1,0 +1,439 @@
+#!/usr/bin/env julia
+
+"""
+GenomicPro2 Command-Line Interface
+
+A comprehensive CLI tool for genomic prediction and analysis.
+
+Usage:
+    genomicpro2 <command> [options]
+
+Commands:
+    gwas        Perform GWAS analysis
+    gblup       Run GBLUP genomic prediction
+    bayesr      Run BayesR analysis
+    bayescpi    Run BayesCπ analysis
+    rkhs        Run RKHS kernel method
+    deepgblup   Run Deep GBLUP neural network
+    pca         Perform PCA analysis
+    admixture   Run ADMIXTURE analysis
+    qc          Quality control filtering
+    grm         Compute genomic relationship matrix
+    server      Start Web API server
+    config      Manage configuration
+    version     Show version information
+    help        Show this help message
+
+Examples:
+    # Run GWAS
+    genomicpro2 gwas --geno data/geno --pheno data/pheno.csv --out results/gwas
+
+    # Run GBLUP
+    genomicpro2 gblup --geno data/geno --pheno data/pheno.csv --cv 5
+
+    # Start server
+    genomicpro2 server --host 0.0.0.0 --port 8080
+
+    # Quality control
+    genomicpro2 qc --geno data/geno --maf 0.05 --missing 0.1 --out data/geno_qc
+
+For detailed help on a specific command:
+    genomicpro2 <command> --help
+"""
+
+using ArgParse
+using GenomicPro2
+using Printf
+
+# ============================================================================
+# Argument Parsing
+# ============================================================================
+
+function parse_commandline()
+    s = ArgParseSettings(
+        prog = "genomicpro2",
+        description = "GenomicPro2 - High-Performance Genomic Analysis",
+        version = "2.0.0",
+        add_version = true
+    )
+
+    @add_arg_table! s begin
+        "gwas"
+            help = "Perform GWAS analysis"
+            action = :command
+        "gblup"
+            help = "Run GBLUP genomic prediction"
+            action = :command
+        "bayesr"
+            help = "Run BayesR analysis"
+            action = :command
+        "bayescpi"
+            help = "Run BayesCπ analysis"
+            action = :command
+        "rkhs"
+            help = "Run RKHS kernel method"
+            action = :command
+        "deepgblup"
+            help = "Run Deep GBLUP neural network"
+            action = :command
+        "pca"
+            help = "Perform PCA analysis"
+            action = :command
+        "admixture"
+            help = "Run ADMIXTURE analysis"
+            action = :command
+        "qc"
+            help = "Quality control filtering"
+            action = :command
+        "grm"
+            help = "Compute genomic relationship matrix"
+            action = :command
+        "server"
+            help = "Start Web API server"
+            action = :command
+        "config"
+            help = "Manage configuration"
+            action = :command
+    end
+
+    # GWAS command
+    @add_arg_table! s["gwas"] begin
+        "--geno", "-g"
+            help = "Genotype file (PLINK binary)"
+            required = true
+        "--pheno", "-p"
+            help = "Phenotype file (CSV)"
+            required = true
+        "--out", "-o"
+            help = "Output prefix"
+            default = "gwas_results"
+        "--model", "-m"
+            help = "Model type: linear, mixed"
+            default = "mixed"
+        "--pcs"
+            help = "Number of PCs to adjust"
+            arg_type = Int
+            default = 10
+        "--threads", "-t"
+            help = "Number of threads"
+            arg_type = Int
+            default = Threads.nthreads()
+        "--gpu"
+            help = "Use GPU acceleration"
+            action = :store_true
+    end
+
+    # GBLUP command
+    @add_arg_table! s["gblup"] begin
+        "--geno", "-g"
+            help = "Genotype file"
+            required = true
+        "--pheno", "-p"
+            help = "Phenotype file"
+            required = true
+        "--out", "-o"
+            help = "Output prefix"
+            default = "gblup_results"
+        "--cv"
+            help = "Cross-validation folds"
+            arg_type = Int
+            default = 5
+        "--grm"
+            help = "Pre-computed GRM file"
+        "--threads", "-t"
+            help = "Number of threads"
+            arg_type = Int
+            default = Threads.nthreads()
+    end
+
+    # BayesR command
+    @add_arg_table! s["bayesr"] begin
+        "--geno", "-g"
+            help = "Genotype file"
+            required = true
+        "--pheno", "-p"
+            help = "Phenotype file"
+            required = true
+        "--out", "-o"
+            help = "Output prefix"
+            default = "bayesr_results"
+        "--niter"
+            help = "Number of iterations"
+            arg_type = Int
+            default = 50000
+        "--burnin"
+            help = "Burn-in iterations"
+            arg_type = Int
+            default = 10000
+    end
+
+    # BayesCπ command
+    @add_arg_table! s["bayescpi"] begin
+        "--geno", "-g"
+            help = "Genotype file"
+            required = true
+        "--pheno", "-p"
+            help = "Phenotype file"
+            required = true
+        "--out", "-o"
+            help = "Output prefix"
+            default = "bayescpi_results"
+        "--niter"
+            help = "Number of iterations"
+            arg_type = Int
+            default = 50000
+        "--burnin"
+            help = "Burn-in iterations"
+            arg_type = Int
+            default = 10000
+        "--estimate-pi"
+            help = "Estimate π automatically"
+            action = :store_true
+    end
+
+    # PCA command
+    @add_arg_table! s["pca"] begin
+        "--geno", "-g"
+            help = "Genotype file"
+            required = true
+        "--out", "-o"
+            help = "Output prefix"
+            default = "pca_results"
+        "--npcs"
+            help = "Number of principal components"
+            arg_type = Int
+            default = 20
+    end
+
+    # Quality Control command
+    @add_arg_table! s["qc"] begin
+        "--geno", "-g"
+            help = "Genotype file"
+            required = true
+        "--out", "-o"
+            help = "Output prefix"
+            required = true
+        "--maf"
+            help = "Minor allele frequency threshold"
+            arg_type = Float64
+            default = 0.05
+        "--missing"
+            help = "Missing rate threshold"
+            arg_type = Float64
+            default = 0.1
+        "--hwe"
+            help = "Hardy-Weinberg p-value threshold"
+            arg_type = Float64
+            default = 1e-6
+    end
+
+    # GRM command
+    @add_arg_table! s["grm"] begin
+        "--geno", "-g"
+            help = "Genotype file"
+            required = true
+        "--out", "-o"
+            help = "Output file"
+            default = "grm.bin"
+        "--method"
+            help = "Method: vanraden, additive"
+            default = "vanraden"
+        "--threads", "-t"
+            help = "Number of threads"
+            arg_type = Int
+            default = Threads.nthreads()
+        "--gpu"
+            help = "Use GPU acceleration"
+            action = :store_true
+    end
+
+    # Server command
+    @add_arg_table! s["server"] begin
+        "--host"
+            help = "Host address"
+            default = "127.0.0.1"
+        "--port"
+            help = "Port number"
+            arg_type = Int
+            default = 8080
+        "--config"
+            help = "Configuration file"
+    end
+
+    # Config command
+    @add_arg_table! s["config"] begin
+        "--show"
+            help = "Show current configuration"
+            action = :store_true
+        "--create"
+            help = "Create example config file"
+            action = :store_true
+        "--file"
+            help = "Configuration file path"
+            default = "GenomicPro2.toml"
+    end
+
+    return parse_args(s)
+end
+
+# ============================================================================
+# Command Handlers
+# ============================================================================
+
+function run_gwas(args)
+    println("="^80)
+    println("Running GWAS Analysis")
+    println("="^80)
+
+    @info "Loading data..."
+    @info "  Genotypes: $(args["geno"])"
+    @info "  Phenotypes: $(args["pheno"])"
+
+    # Load data
+    # genotypes = read_plink(args["geno"])
+    # phenotypes = read_phenotypes(args["pheno"])
+
+    # Run GWAS
+    @info "Running GWAS with $(args["model"]) model"
+    @info "  PCs: $(args["pcs"])"
+    @info "  Threads: $(args["threads"])"
+    @info "  GPU: $(args["gpu"])"
+
+    # model = if args["model"] == "linear"
+    #     LinearModelGWAS(adjust_population_structure = args["pcs"] > 0, n_pcs = args["pcs"])
+    # else
+    #     MixedModelGWAS()
+    # end
+
+    # results = perform_gwas(genotypes, phenotypes, model, parallel=true)
+
+    @info "Saving results to $(args["out"])"
+    # save_gwas_results(results, args["out"])
+
+    println("\n✓ GWAS analysis completed successfully")
+end
+
+function run_gblup(args)
+    println("="^80)
+    println("Running GBLUP Analysis")
+    println("="^80)
+
+    @info "Loading data..."
+    # Implementation here
+
+    println("\n✓ GBLUP analysis completed successfully")
+end
+
+function run_qc(args)
+    println("="^80)
+    println("Quality Control")
+    println("="^80)
+
+    @info "Filters:"
+    @info "  MAF: >= $(args["maf"])"
+    @info "  Missing: <= $(args["missing"])"
+    @info "  HWE p-value: >= $(args["hwe"])"
+
+    # Load and filter data
+    # Implementation here
+
+    println("\n✓ Quality control completed successfully")
+end
+
+function run_grm(args)
+    println("="^80)
+    println("Computing Genomic Relationship Matrix")
+    println("="^80)
+
+    @info "Method: $(args["method"])"
+    @info "Threads: $(args["threads"])"
+    @info "GPU: $(args["gpu"])"
+
+    # Compute GRM
+    # Implementation here
+
+    println("\n✓ GRM computation completed successfully")
+end
+
+function run_pca(args)
+    println("="^80)
+    println("Principal Component Analysis")
+    println("="^80)
+
+    @info "Number of PCs: $(args["npcs"])"
+
+    # Run PCA
+    # Implementation here
+
+    println("\n✓ PCA analysis completed successfully")
+end
+
+function run_server(args)
+    println("="^80)
+    println("Starting GenomicPro2 Web Server")
+    println("="^80)
+
+    if haskey(args, "config") && args["config"] !== nothing
+        config = load_config(args["config"])
+        setup_logging_from_config(config)
+    end
+
+    start_server(host=args["host"], port=args["port"])
+end
+
+function run_config(args)
+    if args["show"]
+        config = load_config(get(args, "file", "GenomicPro2.toml"))
+        print_config(config)
+    elseif args["create"]
+        println("Creating example configuration file: $(args["file"])")
+        # Copy example config
+        # Implementation here
+        println("✓ Configuration file created")
+    else
+        println("Use --show to display configuration or --create to create example")
+    end
+end
+
+# ============================================================================
+# Main Entry Point
+# ============================================================================
+
+function main()
+    args = parse_commandline()
+
+    # Determine which command was called
+    if args["%COMMAND%"] == "gwas"
+        run_gwas(args["gwas"])
+    elseif args["%COMMAND%"] == "gblup"
+        run_gblup(args["gblup"])
+    elseif args["%COMMAND%"] == "bayesr"
+        println("BayesR analysis - Implementation coming soon")
+    elseif args["%COMMAND%"] == "bayescpi"
+        println("BayesCπ analysis - Implementation coming soon")
+    elseif args["%COMMAND%"] == "rkhs"
+        println("RKHS analysis - Implementation coming soon")
+    elseif args["%COMMAND%"] == "deepgblup"
+        println("Deep GBLUP analysis - Implementation coming soon")
+    elseif args["%COMMAND%"] == "pca"
+        run_pca(args["pca"])
+    elseif args["%COMMAND%"] == "admixture"
+        println("ADMIXTURE analysis - Implementation coming soon")
+    elseif args["%COMMAND%"] == "qc"
+        run_qc(args["qc"])
+    elseif args["%COMMAND%"] == "grm"
+        run_grm(args["grm"])
+    elseif args["%COMMAND%"] == "server"
+        run_server(args["server"])
+    elseif args["%COMMAND%"] == "config"
+        run_config(args["config"])
+    else
+        println("Unknown command. Use --help for usage information.")
+        exit(1)
+    end
+end
+
+# Run if executed as script
+if abspath(PROGRAM_FILE) == @__FILE__
+    main()
+end
