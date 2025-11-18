@@ -80,6 +80,22 @@ using .QC
 include("Utils/Utils.jl")
 using .Utils
 
+# Include GPU modules
+include("GPU/GPU.jl")
+using .GPU
+
+# Include Population Structure modules
+include("PopulationStructure/PopulationStructure.jl")
+using .PopulationStructure
+
+# Include Visualization modules
+include("Visualization/Visualization.jl")
+using .Visualization
+
+# Include Web API modules
+include("WebAPI/WebAPI.jl")
+using .WebAPI
+
 # Export core types
 export AbstractGenomicData, AbstractGenotypeData, AbstractPhenotypeData
 export ValidationResult
@@ -136,5 +152,32 @@ export compute_ld_matrix
 # Export Utils
 export GenotypeDataSummary, PhenotypeDataSummary
 export summarize, compare_datasets, detect_outliers, marker_quality_summary
+
+# Export GPU functions
+export has_cuda, gpu_info
+export compute_grm_gpu, gblup_gpu
+
+# Export new Models
+export BayesCpiResults, fit_bayescpi, predict_bayescpi
+export KernelFunction, LinearKernel, GaussianKernel, PolynomialKernel, ExponentialKernel
+export RKHSResults, fit_rkhs, predict_rkhs, cross_validate_bandwidth
+export DeepGBLUP, DeepGBLUPResults, train_deepgblup!, predict_deepgblup
+
+# Export Population Structure
+export PCAResults, perform_pca, scree_plot, biplot_pca
+export project_new_samples, compute_fst, compute_kinship
+export ADMIXTUREResults, perform_admixture, estimate_optimal_k, assign_clusters
+
+# Export Visualization
+export prepare_manhattan_plot, manhattan_plot, GWASResult
+export find_top_snps, genomic_control
+export prepare_qq_plot, qq_plot
+export qqplot_by_chromosome, check_inflation, calculate_expected_pvalues
+export prepare_pca_plot, pca_scatter_plot
+export prepare_admixture_plot, admixture_barplot
+export export_plot_data
+
+# Export Web API
+export start_server, stop_server
 
 end # module GenomicPro2

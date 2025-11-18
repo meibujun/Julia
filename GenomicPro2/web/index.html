@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GenomicPro2 - 基因组分析平台</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.plot.ly/plotly-2.26.0.min.js"></script>
+    <style>
+        .sidebar {
+            min-height: 100vh;
+            background-color: #f8f9fa;
+            padding: 20px;
+        }
+        .main-content {
+            padding: 20px;
+        }
+        .card-header {
+            background-color: #007bff;
+            color: white;
+            font-weight: bold;
+        }
+        .status-badge {
+            margin-left: 10px;
+        }
+        #plot-container {
+            min-height: 500px;
+            margin-top: 20px;
+        }
+        .feature-card {
+            transition: transform 0.2s;
+        }
+        .feature-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+    </style>
+</head>
+<body>
+    <!-- 导航栏 -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="#">
+                <strong>GenomicPro2</strong>
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link active" href="#home">首页</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#data">数据管理</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#analysis">分析</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#visualization">可视化</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#docs">文档</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid">
+        <div class="row">
+            <!-- 侧边栏 -->
+            <div class="col-md-3 col-lg-2 sidebar">
+                <h5 class="mb-4">功能模块</h5>
+                <div class="list-group">
+                    <a href="#upload" class="list-group-item list-group-item-action">
+                        📁 数据上传
+                    </a>
+                    <a href="#models" class="list-group-item list-group-item-action">
+                        🧮 预测模型
+                    </a>
+                    <a href="#population" class="list-group-item list-group-item-action">
+                        👥 群体结构
+                    </a>
+                    <a href="#gwas" class="list-group-item list-group-item-action">
+                        🔬 GWAS 分析
+                    </a>
+                    <a href="#plots" class="list-group-item list-group-item-action">
+                        📊 可视化
+                    </a>
+                    <a href="#jobs" class="list-group-item list-group-item-action">
+                        ⚙️ 任务管理
+                    </a>
+                </div>
+
+                <hr class="my-4">
+
+                <h6>系统状态</h6>
+                <div class="alert alert-success" role="alert">
+                    <small>✅ 服务器运行正常</small>
+                </div>
+                <div class="alert alert-info" role="alert">
+                    <small>🖥️ GPU: 可用</small>
+                </div>
+            </div>
+
+            <!-- 主内容区 -->
+            <div class="col-md-9 col-lg-10 main-content">
+                <!-- 欢迎页面 -->
+                <div id="home" class="section">
+                    <div class="jumbotron bg-light p-5 rounded">
+                        <h1 class="display-4">欢迎使用 GenomicPro2</h1>
+                        <p class="lead">
+                            高性能基因组预测与分析平台
+                        </p>
+                        <hr class="my-4">
+                        <p>
+                            集成多种先进的基因组分析方法，支持 GPU 加速、深度学习模型和交互式可视化。
+                        </p>
+                    </div>
+
+                    <!-- 功能卡片 -->
+                    <div class="row mt-4">
+                        <div class="col-md-4">
+                            <div class="card feature-card mb-3">
+                                <div class="card-body">
+                                    <h5 class="card-title">🚀 GPU 加速</h5>
+                                    <p class="card-text">
+                                        CUDA 支持，大规模数据集计算速度提升 10-50 倍
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="card feature-card mb-3">
+                                <div class="card-body">
+                                    <h5 class="card-title">🧠 深度学习</h5>
+                                    <p class="card-text">
+                                        Deep GBLUP 模型，捕捉复杂非线性遗传效应
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="card feature-card mb-3">
+                                <div class="card-body">
+                                    <h5 class="card-title">📊 丰富可视化</h5>
+                                    <p class="card-text">
+                                        Manhattan 图、QQ 图、PCA 图等多种交互式可视化
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 支持的模型 -->
+                    <div class="card mt-4">
+                        <div class="card-header">
+                            支持的预测模型
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <h6>传统模型</h6>
+                                    <ul>
+                                        <li>GBLUP - 基因组最佳线性无偏预测</li>
+                                        <li>BayesR - 贝叶斯混合模型</li>
+                                        <li>BayesCπ - 贝叶斯变量选择</li>
+                                    </ul>
+                                </div>
+                                <div class="col-md-6">
+                                    <h6>高级模型</h6>
+                                    <ul>
+                                        <li>RKHS - 再生核希尔伯特空间</li>
+                                        <li>Deep GBLUP - 深度学习模型</li>
+                                        <li>GPU-GBLUP - GPU 加速版本</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 群体分析 -->
+                    <div class="card mt-4">
+                        <div class="card-header">
+                            群体结构分析
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <h6>PCA - 主成分分析</h6>
+                                    <p class="text-muted">检测群体分层，识别离群个体</p>
+                                </div>
+                                <div class="col-md-6">
+                                    <h6>ADMIXTURE - 混合分析</h6>
+                                    <p class="text-muted">估计个体的祖先群体混合比例</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 数据上传区 -->
+                <div id="upload" class="section mt-5">
+                    <div class="card">
+                        <div class="card-header">
+                            数据上传
+                        </div>
+                        <div class="card-body">
+                            <form>
+                                <div class="mb-3">
+                                    <label for="genotypeFile" class="form-label">基因型文件 (PLINK .bed/.bim/.fam 或 VCF)</label>
+                                    <input type="file" class="form-control" id="genotypeFile" multiple>
+                                    <div class="form-text">支持的格式: PLINK binary, VCF</div>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="phenotypeFile" class="form-label">表型文件 (CSV)</label>
+                                    <input type="file" class="form-control" id="phenotypeFile">
+                                    <div class="form-text">CSV 格式，第一列为样本 ID，第二列为表型值</div>
+                                </div>
+                                <button type="submit" class="btn btn-primary">上传</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 分析区 -->
+                <div id="models" class="section mt-5">
+                    <div class="card">
+                        <div class="card-header">
+                            运行预测模型
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <label for="modelSelect" class="form-label">选择模型</label>
+                                    <select class="form-select" id="modelSelect">
+                                        <option value="gblup">GBLUP</option>
+                                        <option value="bayescpi">BayesCπ</option>
+                                        <option value="rkhs">RKHS</option>
+                                        <option value="deepgblup">Deep GBLUP</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-6">
+                                    <label for="datasetSelect" class="form-label">选择数据集</label>
+                                    <select class="form-select" id="datasetSelect">
+                                        <option>请先上传数据</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="mt-3">
+                                <button class="btn btn-success" onclick="runAnalysis()">运行分析</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 可视化区 -->
+                <div id="plots" class="section mt-5">
+                    <div class="card">
+                        <div class="card-header">
+                            可视化
+                        </div>
+                        <div class="card-body">
+                            <div class="btn-group mb-3" role="group">
+                                <button type="button" class="btn btn-outline-primary" onclick="showManhattanPlot()">
+                                    Manhattan 图
+                                </button>
+                                <button type="button" class="btn btn-outline-primary" onclick="showQQPlot()">
+                                    QQ 图
+                                </button>
+                                <button type="button" class="btn btn-outline-primary" onclick="showPCAPlot()">
+                                    PCA 图
+                                </button>
+                                <button type="button" class="btn btn-outline-primary" onclick="showAdmixturePlot()">
+                                    ADMIXTURE 图
+                                </button>
+                            </div>
+                            <div id="plot-container"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // 示例：Manhattan 图
+        function showManhattanPlot() {
+            // 模拟数据
+            const trace = {
+                x: Array.from({length: 1000}, (_, i) => i),
+                y: Array.from({length: 1000}, () => Math.random() * 10),
+                mode: 'markers',
+                type: 'scatter',
+                marker: {
+                    size: 4,
+                    color: Array.from({length: 1000}, (_, i) => i % 2)
+                }
+            };
+
+            const layout = {
+                title: 'Manhattan Plot',
+                xaxis: { title: '染色体位置' },
+                yaxis: { title: '-log10(P 值)' },
+                height: 500
+            };
+
+            Plotly.newPlot('plot-container', [trace], layout);
+        }
+
+        // QQ 图
+        function showQQPlot() {
+            const n = 1000;
+            const expected = Array.from({length: n}, (_, i) => -Math.log10((i + 0.5) / n));
+            const observed = expected.map(x => x + (Math.random() - 0.5) * 0.5);
+
+            const trace = {
+                x: expected,
+                y: observed,
+                mode: 'markers',
+                type: 'scatter',
+                marker: { size: 4 }
+            };
+
+            const diagonalTrace = {
+                x: [0, Math.max(...expected)],
+                y: [0, Math.max(...expected)],
+                mode: 'lines',
+                line: { color: 'red', dash: 'dash' }
+            };
+
+            const layout = {
+                title: 'QQ Plot',
+                xaxis: { title: '期望 -log10(P)' },
+                yaxis: { title: '观察 -log10(P)' },
+                height: 500
+            };
+
+            Plotly.newPlot('plot-container', [trace, diagonalTrace], layout);
+        }
+
+        // PCA 图
+        function showPCAPlot() {
+            const n = 100;
+            const trace = {
+                x: Array.from({length: n}, () => Math.random() * 10 - 5),
+                y: Array.from({length: n}, () => Math.random() * 10 - 5),
+                mode: 'markers',
+                type: 'scatter',
+                marker: {
+                    size: 8,
+                    color: Array.from({length: n}, () => Math.floor(Math.random() * 3))
+                }
+            };
+
+            const layout = {
+                title: 'PCA Plot',
+                xaxis: { title: 'PC1 (25%)' },
+                yaxis: { title: 'PC2 (15%)' },
+                height: 500
+            };
+
+            Plotly.newPlot('plot-container', [trace], layout);
+        }
+
+        // ADMIXTURE 图
+        function showAdmixturePlot() {
+            alert('ADMIXTURE 图需要后端数据支持');
+        }
+
+        // 运行分析
+        function runAnalysis() {
+            const model = document.getElementById('modelSelect').value;
+            alert(`准备运行 ${model} 模型分析...\n\n这需要后端 API 支持。`);
+        }
+
+        // 页面加载时显示欢迎信息
+        console.log('GenomicPro2 Web Interface Loaded');
+    </script>
+</body>
+</html>

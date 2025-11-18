@@ -11,6 +11,11 @@ Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
 
+# 可选依赖（根据需要安装）
+# CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"          # GPU 加速
+# HTTP = "cd3eb016-35fb-5094-929b-558a96fad6cf"          # Web API 服务器
+# JSON3 = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"         # JSON 序列化
+
 [compat]
 julia = "1.10"
 
