@@ -131,6 +131,10 @@ export BayesRModel, BayesRResult
 # Export BayesCπ
 export BayesCπModel, BayesCπResult
 
+# Export RKHS
+export RKHSModel, RKHSResult
+export compute_kernel, center_kernel_matrix!
+
 # Export QC
 export quality_control, qc_report, QCReport, QCFilters
 export filter_maf, filter_missing_markers, filter_missing_samples, filter_hwe

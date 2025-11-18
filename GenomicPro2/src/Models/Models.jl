@@ -41,6 +41,7 @@ include("crossvalidation.jl")
 include("grm_parallel.jl")
 include("bayesr.jl")
 include("bayescpi.jl")
+include("rkhs.jl")
 
 # Export GRM functions
 export compute_grm, compute_grm_vanraden, compute_grm_additive
@@ -64,5 +65,9 @@ export BayesRModel, BayesRResult
 
 # Export BayesCπ
 export BayesCπModel, BayesCπResult
+
+# Export RKHS
+export RKHSModel, RKHSResult
+export compute_kernel, center_kernel_matrix!
 
 end # module Models
