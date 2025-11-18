@@ -96,6 +96,18 @@ using .Visualization
 include("WebAPI/WebAPI.jl")
 using .WebAPI
 
+# Include Config module
+include("Config/Config.jl")
+using .Config
+
+# Include Logging module
+include("Logging/Logging.jl")
+using .Logging
+
+# Include GWAS module
+include("GWAS/GWAS.jl")
+using .GWAS
+
 # Export core types
 export AbstractGenomicData, AbstractGenotypeData, AbstractPhenotypeData
 export ValidationResult
@@ -179,5 +191,19 @@ export export_plot_data
 
 # Export Web API
 export start_server, stop_server
+
+# Export Config
+export GenomicProConfig, load_config, save_config, print_config
+export get_config, set_global_config!, reset_config!, validate_config
+
+# Export Logging
+export setup_logging, setup_logging_from_config, close_logger
+export @debug, @info, @warn, @error, @log_performance
+export PerformanceTimer, start!, stop!, log_performance
+
+# Export GWAS
+export AbstractGWASModel, LinearModelGWAS, MixedModelGWAS
+export GWASResults, perform_gwas, gwas_gpu
+export adjust_pvalues, genomic_control
 
 end # module GenomicPro2
