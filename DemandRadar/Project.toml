@@ -1,0 +1,30 @@
+name = "DemandRadar"
+uuid = "8f1bb355-7789-449e-868b-da7757a20bfb"
+authors = ["google-labs-jules[bot] <161369871+google-labs-jules[bot]@users.noreply.github.com>"]
+version = "0.1.0"
+
+[deps]
+Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
+Genie = "c43c736e-a2d1-11e8-161f-af95117fbd1e"
+GenieAuthentication = "e115e502-7e3a-11e9-29b2-aba8be6c6778"
+Gumbo = "708ec375-b3d6-5a57-a7ce-8257bf98657a"
+HTTP = "cd3eb016-35fb-5094-929b-558a96fad6f3"
+Inflector = "6d011eab-0732-4556-8808-e463c76bf3b6"
+Logging = "56ddb016-857b-54e1-b83d-db4d58db5568"
+SearchLight = "340e8cb6-72eb-11e8-37ce-c97ebeb32050"
+SearchLightSQLite = "21a827c4-482a-11ea-3a19-4d2243a4a2c5"
+TestSetExtensions = "98d24dd4-01ad-11ea-1b02-c9a08f80db04"
+TextAnalysis = "a2db99b7-8b79-58f8-94bf-bbc811eef33d"
+
+[compat]
+Dates = "1.11.0"
+Genie = "5.33.17"
+GenieAuthentication = "2.2.0"
+Gumbo = "0.8.3"
+HTTP = "1.10.19"
+Inflector = "1.1.0"
+Logging = "1.11.0"
+SearchLight = "2.11.1"
+SearchLightSQLite = "2.2.2"
+TestSetExtensions = "3.0.0"
+TextAnalysis = "0.8.4"
