@@ -80,6 +80,14 @@ using .QC
 include("Utils/Utils.jl")
 using .Utils
 
+# Include PopulationStructure modules
+include("PopulationStructure/PopulationStructure.jl")
+using .PopulationStructure
+
+# Include Visualization modules
+include("Visualization/Visualization.jl")
+using .Visualization
+
 # Export core types
 export AbstractGenomicData, AbstractGenotypeData, AbstractPhenotypeData
 export ValidationResult
@@ -136,5 +144,14 @@ export compute_ld_matrix
 # Export Utils
 export GenotypeDataSummary, PhenotypeDataSummary
 export summarize, compare_datasets, detect_outliers, marker_quality_summary
+
+# Export Population Structure
+export PCAResult
+export pca, detect_outliers_pca, cluster_samples
+
+# Export Visualization
+export GWASResult
+export manhattan_plot_data, qq_plot_data, pca_plot_data, ld_heatmap_data
+export save_plot_data
 
 end # module GenomicPro2
