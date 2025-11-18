@@ -128,6 +128,9 @@ export create_folds
 # Export BayesR
 export BayesRModel, BayesRResult
 
+# Export BayesCπ
+export BayesCπModel, BayesCπResult
+
 # Export QC
 export quality_control, qc_report, QCReport, QCFilters
 export filter_maf, filter_missing_markers, filter_missing_samples, filter_hwe

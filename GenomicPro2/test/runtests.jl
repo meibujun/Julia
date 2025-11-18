@@ -136,6 +136,18 @@ overall_start = time()
         end
     end
 
+    # BayesCπ tests
+    @testset "BayesCπ Model" begin
+        start_time = time()
+        try
+            include("test_bayescpi.jl")
+            test_results["BayesCπ"] = (passed=true, time=time()-start_time)
+        catch e
+            test_results["BayesCπ"] = (passed=false, time=time()-start_time, error=e)
+            rethrow(e)
+        end
+    end
+
     # Quality control tests
     @testset "Quality Control" begin
         start_time = time()

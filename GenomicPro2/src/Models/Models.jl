@@ -40,6 +40,7 @@ include("gblup.jl")
 include("crossvalidation.jl")
 include("grm_parallel.jl")
 include("bayesr.jl")
+include("bayescpi.jl")
 
 # Export GRM functions
 export compute_grm, compute_grm_vanraden, compute_grm_additive
@@ -60,5 +61,8 @@ export create_folds
 
 # Export BayesR
 export BayesRModel, BayesRResult
+
+# Export BayesCπ
+export BayesCπModel, BayesCπResult
 
 end # module Models
