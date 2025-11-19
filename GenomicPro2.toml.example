@@ -1,0 +1,83 @@
+# GenomicPro2 配置文件示例
+# 复制此文件为 GenomicPro2.toml 并根据需要修改
+
+[compute]
+# 线程数（0 表示使用所有可用线程）
+threads = 8
+
+# 是否使用 GPU 加速
+use_gpu = true
+
+# GPU 设备 ID（如果有多个 GPU）
+gpu_device_id = 0
+
+# 并行后端：threads 或 distributed
+parallel_backend = "threads"
+
+[memory]
+# 最大内存使用量（GB）
+max_memory_gb = 32.0
+
+# 分块大小（用于大数据集）
+chunk_size = 5000
+
+# 是否使用压缩
+use_compression = true
+
+# 缓存大小（MB）
+cache_size_mb = 2048
+
+[io]
+# 临时文件目录
+temp_dir = "/tmp/genomicpro2"
+
+# 输出目录
+output_dir = "./results"
+
+# 是否自动清理临时文件
+auto_cleanup = true
+
+# IO 缓冲区大小（MB）
+buffer_size_mb = 128
+
+[logging]
+# 日志级别：DEBUG, INFO, WARN, ERROR
+log_level = "INFO"
+
+# 日志文件路径（留空则不写文件）
+log_file = "genomicpro2.log"
+
+# 是否输出到控制台
+console_output = true
+
+# 是否启用性能日志
+performance_logging = false
+
+[api]
+# Web API 监听地址
+host = "0.0.0.0"
+
+# Web API 端口
+port = 8080
+
+# 是否启用 CORS
+cors_enabled = true
+
+# 最大上传文件大小（MB）
+max_upload_size_mb = 2048
+
+# 会话超时时间（分钟）
+session_timeout_minutes = 120
+
+[analysis]
+# 默认预测模型
+default_model = "gblup"
+
+# 交叉验证折数
+cross_validation_folds = 5
+
+# GWAS 显著性阈值
+significance_threshold = 5e-8
+
+# 最大迭代次数（用于迭代算法）
+max_iterations = 10000

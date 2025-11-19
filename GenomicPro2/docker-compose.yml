@@ -1,0 +1,88 @@
+# Docker Compose for GenomicPro2
+
+version: '3.8'
+
+services:
+  # Main GenomicPro2 application
+  genomicpro2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: genomicpro2
+    image: genomicpro2:latest
+    ports:
+      - "8080:8080"  # Web API
+    volumes:
+      - ./data:/app/data
+      - ./results:/app/results
+      - ./logs:/app/logs
+    environment:
+      - JULIA_NUM_THREADS=4
+      - GENOMICPRO_THREADS=4
+      - GENOMICPRO_LOG_LEVEL=INFO
+      - GENOMICPRO_GPU=false
+    command: julia --project=. -e 'using GenomicPro2; start_server(host="0.0.0.0", port=8080)'
+    restart: unless-stopped
+    networks:
+      - genomicpro2-network
+
+  # GPU-enabled version (requires NVIDIA Docker)
+  genomicpro2-gpu:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: genomicpro2-gpu
+    image: genomicpro2:latest-gpu
+    ports:
+      - "8081:8080"
+    volumes:
+      - ./data:/app/data
+      - ./results:/app/results
+      - ./logs:/app/logs
+    environment:
+      - JULIA_NUM_THREADS=8
+      - GENOMICPRO_THREADS=8
+      - GENOMICPRO_LOG_LEVEL=INFO
+      - GENOMICPRO_GPU=true
+      - CUDA_VISIBLE_DEVICES=0
+    runtime: nvidia
+    command: julia --project=. -e 'using GenomicPro2; start_server(host="0.0.0.0", port=8080)'
+    restart: unless-stopped
+    networks:
+      - genomicpro2-network
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  # Jupyter notebook server for interactive analysis
+  jupyter:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: genomicpro2-jupyter
+    image: genomicpro2:jupyter
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./notebooks:/app/notebooks
+      - ./data:/app/data
+      - ./results:/app/results
+    environment:
+      - JULIA_NUM_THREADS=4
+    command: jupyter notebook --ip=0.0.0.0 --port=8888 --no-browser --allow-root --notebook-dir=/app/notebooks
+    restart: unless-stopped
+    networks:
+      - genomicpro2-network
+
+networks:
+  genomicpro2-network:
+    driver: bridge
+
+volumes:
+  data:
+  results:
+  logs:
