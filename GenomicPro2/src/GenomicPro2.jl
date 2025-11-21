@@ -206,4 +206,7 @@ export AbstractGWASModel, LinearModelGWAS, MixedModelGWAS
 export GWASResults, perform_gwas, gwas_gpu
 export adjust_pvalues, genomic_control
 
+    # Export Transformer Model
+    export TransformerGenomicModel, train_transformer!, predict_transformer
+
 end # module GenomicPro2

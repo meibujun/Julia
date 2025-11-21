@@ -87,4 +87,9 @@ export RKHSResults, fit_rkhs, predict_rkhs, cross_validate_bandwidth
 # Export Deep GBLUP
 export DeepGBLUP, DeepGBLUPResults, train_deepgblup!, predict_deepgblup
 
+# Include and Export Transformer Model
+include("transformer_genomic.jl")
+using .TransformerGenomic
+export TransformerGenomicModel, train_transformer!, predict_transformer
+
 end # module Models

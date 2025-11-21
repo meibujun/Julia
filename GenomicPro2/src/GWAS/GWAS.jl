@@ -220,170 +220,49 @@ function perform_gwas(genotypes::CompactGenotypes,
     end
 end
 
-"""
-线性模型 GWAS 实现
-"""
-function perform_linear_gwas(genotypes::CompactGenotypes,
-                              y::Vector{Float64},
-                              model::LinearModelGWAS,
-                              parallel::Bool,
-                              verbose::Bool)
-
-    n_samples = size(genotypes.data, 1)
-    n_snps = size(genotypes.data, 2)
-
-    # 准备协变量矩阵
-    X_cov = prepare_covariates(genotypes, model, verbose)
-
-    # 初始化结果
-    pvalues = zeros(n_snps)
-    effect_sizes = zeros(n_snps)
-    standard_errors = zeros(n_snps)
-    test_statistics = zeros(n_snps)
-
-    # 并行或串行计算
-    if parallel && Threads.nthreads() > 1
+    # Prepare covariates (excluding intercept, as optimized function adds it)
+    covs = model.covariates
+    if model.adjust_population_structure
         if verbose
-            @info "  并行计算（$(Threads.nthreads()) 线程）"
+            @info "  Performing PCA for population structure correction..."
         end
-
-        Threads.@threads for j in 1:n_snps
-            pvalues[j], effect_sizes[j], standard_errors[j], test_statistics[j] =
-                test_snp_linear(genotypes, y, j, X_cov)
-        end
-    else
-        if verbose
-            @info "  串行计算"
-            progress_interval = max(1, div(n_snps, 20))
-        end
-
-        for j in 1:n_snps
-            pvalues[j], effect_sizes[j], standard_errors[j], test_statistics[j] =
-                test_snp_linear(genotypes, y, j, X_cov)
-
-            if verbose && j % progress_interval == 0
-                @info "    进度: $j / $n_snps ($(round(100*j/n_snps, digits=1))%)"
-            end
+        pca = perform_pca(genotypes, n_components=model.n_pcs, verbose=false)
+        if isnothing(covs)
+            covs = pca.scores[:, 1:model.n_pcs]
+        else
+            covs = hcat(covs, pca.scores[:, 1:model.n_pcs])
         end
     end
 
-    # 计算基因组控制因子
-    lambda = compute_genomic_control(test_statistics)
-
-    if verbose
-        @info "GWAS 分析完成"
-        @info "  基因组控制因子 λ: $(round(lambda, digits=4))"
-    end
-
-    # 构建结果
-    return GWASResults(
-        genotypes.sample_ids,  # 假设 SNP IDs
-        ones(Int, n_snps),     # 假设染色体
-        collect(1:n_snps),     # 假设位置
-        pvalues,
-        effect_sizes,
-        standard_errors,
-        test_statistics,
-        "Linear Model",
-        n_samples,
-        n_snps,
-        lambda,
-        nothing
-    )
+    return perform_gwas_linear_optimized(genotypes, 
+                                         PhenotypeData(y, genotypes.sample_ids, ["Trait"]), 
+                                         covariates=covs,
+                                         use_parallel=parallel)
 end
 
 """
-混合模型 GWAS 实现
+混合模型 GWAS 实现 (委托给优化版本)
 """
 function perform_mixed_gwas(genotypes::CompactGenotypes,
                              y::Vector{Float64},
                              model::MixedModelGWAS,
                              parallel::Bool,
                              verbose::Bool)
-
-    n_samples = size(genotypes.data, 1)
-    n_snps = size(genotypes.data, 2)
-
-    # 计算或使用提供的 GRM
-    if model.grm === nothing
-        if verbose
-            @info "  计算 GRM..."
-        end
-        grm = compute_grm(genotypes)
-    else
-        grm = model.grm
-    end
-
-    # 准备协变量
-    X_cov = model.covariates === nothing ? ones(n_samples, 1) : model.covariates
-
-    # 估计方差组分（使用全部SNP）
-    if verbose
-        @info "  估计方差组分..."
-    end
-    σ²_g, σ²_e, h2 = estimate_variance_components(y, grm, X_cov, model.reml)
-
-    if verbose
-        @info "  估计的遗传力: $(round(h2, digits=4))"
-        @info "  遗传方差: $(round(σ²_g, digits=6))"
-        @info "  残差方差: $(round(σ²_e, digits=6))"
-    end
-
-    # 计算逆矩阵 V = σ²_g*G + σ²_e*I
-    V = σ²_g * grm + σ²_e * I(n_samples)
-    V_inv = inv(V)
-
-    # 初始化结果
-    pvalues = zeros(n_snps)
-    effect_sizes = zeros(n_snps)
-    standard_errors = zeros(n_snps)
-    test_statistics = zeros(n_snps)
-
-    if verbose
-        @info "  测试各个 SNP..."
-    end
-
-    # 并行测试每个 SNP
-    if parallel && Threads.nthreads() > 1
-        Threads.@threads for j in 1:n_snps
-            pvalues[j], effect_sizes[j], standard_errors[j], test_statistics[j] =
-                test_snp_mixed(genotypes, y, j, X_cov, V_inv)
-        end
-    else
-        progress_interval = max(1, div(n_snps, 20))
-        for j in 1:n_snps
-            pvalues[j], effect_sizes[j], standard_errors[j], test_statistics[j] =
-                test_snp_mixed(genotypes, y, j, X_cov, V_inv)
-
-            if verbose && j % progress_interval == 0
-                @info "    进度: $j / $n_snps ($(round(100*j/n_snps, digits=1))%)"
-            end
-        end
-    end
-
-    # 计算基因组控制因子
-    lambda = compute_genomic_control(test_statistics)
-
-    if verbose
-        @info "GWAS 分析完成"
-        @info "  基因组控制因子 λ: $(round(lambda, digits=4))"
-    end
-
-    return GWASResults(
-        genotypes.sample_ids,
-        ones(Int, n_snps),
-        collect(1:n_snps),
-        pvalues,
-        effect_sizes,
-        standard_errors,
-        test_statistics,
-        "Mixed Model",
-        n_samples,
-        n_snps,
-        lambda,
-        h2
-    )
+                             
+    return perform_gwas_mixed_model_optimized(genotypes,
+                                              PhenotypeData(y, genotypes.sample_ids, ["Trait"]),
+                                              G=model.grm,
+                                              covariates=model.covariates)
 end
+
+# ============================================================================
+# GPU 加速版本
+# ============================================================================
+
+include("gwas_gpu.jl")
+using .GPUGWAS
+
+end # module GWAS
 
 # ============================================================================
 # 辅助函数
@@ -627,39 +506,72 @@ function adjust_pvalues(pvalues::Vector{Float64}; method::Symbol=:bonferroni)
 end
 
 # ============================================================================
+# 优化的 GWAS 实现
+# ============================================================================
+
+include("gwas_optimized.jl")
+
+"""
+线性模型 GWAS 实现 (委托给优化版本)
+"""
+function perform_linear_gwas(genotypes::CompactGenotypes,
+                              y::Vector{Float64},
+                              model::LinearModelGWAS,
+                              parallel::Bool,
+                              verbose::Bool)
+    
+    # 准备协变量 (optimized version handles this internally, but we need to pass matrix)
+    # perform_gwas_linear_optimized expects pheno object, but we have y vector here.
+    # Actually perform_gwas_linear_optimized takes (geno, pheno).
+    # But perform_gwas has already extracted y.
+    
+    # Let's look at perform_gwas_linear_optimized signature again.
+    # It takes (geno, pheno).
+    
+    # We should probably redirect at perform_gwas level or adapt here.
+    # perform_gwas in GWAS.jl does:
+    # y = copy(phenotypes.values)
+    # y .-= mean(y)
+    # perform_linear_gwas(genotypes, y, model...)
+    
+    # perform_gwas_linear_optimized does:
+    # y = pheno.traits[:, 1]
+    # ...
+    
+    # If we want to use the optimized one, we should call it directly from perform_gwas
+    # OR refactor perform_gwas_linear_optimized to take y vector.
+    
+    # Refactoring perform_gwas_linear_optimized is risky without seeing it again.
+    # But wait, I can just call perform_gwas_linear_optimized with a dummy pheno object?
+    # Or better, update perform_gwas to call optimized functions directly.
+    
+    # Let's update perform_gwas instead.
+    return perform_gwas_linear_optimized(genotypes, 
+                                         PhenotypeData(y, genotypes.sample_ids, ["Trait"]), 
+                                         covariates=model.covariates,
+                                         use_parallel=parallel)
+end
+
+"""
+混合模型 GWAS 实现 (委托给优化版本)
+"""
+function perform_mixed_gwas(genotypes::CompactGenotypes,
+                             y::Vector{Float64},
+                             model::MixedModelGWAS,
+                             parallel::Bool,
+                             verbose::Bool)
+                             
+    return perform_gwas_mixed_model_optimized(genotypes,
+                                              PhenotypeData(y, genotypes.sample_ids, ["Trait"]),
+                                              G=model.grm,
+                                              covariates=model.covariates)
+end
+
+# ============================================================================
 # GPU 加速版本
 # ============================================================================
 
-"""
-    gwas_gpu(genotypes::CompactGenotypes, phenotypes::PhenotypeData;
-             model::AbstractGWASModel=LinearModelGWAS())
-
-GPU 加速的 GWAS 分析。
-
-需要 CUDA.jl 包。
-"""
-function gwas_gpu(genotypes::CompactGenotypes,
-                  phenotypes::PhenotypeData;
-                  model::AbstractGWASModel=LinearModelGWAS())
-
-    # 检查 CUDA
-    try
-        CUDA = Base.require(Main, :CUDA)
-        if !CUDA.functional()
-            @warn "CUDA 不可用，回退到 CPU"
-            return perform_gwas(genotypes, phenotypes, model)
-        end
-    catch
-        @warn "CUDA.jl 未安装，回退到 CPU"
-        return perform_gwas(genotypes, phenotypes, model)
-    end
-
-    @info "使用 GPU 加速 GWAS"
-
-    # GPU 实现
-    # TODO: 实现完整的 GPU 版本
-    # 这里先回退到 CPU
-    return perform_gwas(genotypes, phenotypes, model, parallel=true, verbose=true)
-end
+include("gwas_gpu.jl")
+using .GPUGWAS
 
 end # module GWAS

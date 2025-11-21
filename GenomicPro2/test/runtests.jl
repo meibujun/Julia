@@ -195,6 +195,29 @@ overall_start = time()
             rethrow(e)
         end
     end
+    # Transformer tests
+    @testset "Transformer Model" begin
+        start_time = time()
+        try
+            include("test_transformer.jl")
+            test_results["Transformer"] = (passed=true, time=time()-start_time)
+        catch e
+            test_results["Transformer"] = (passed=false, time=time()-start_time, error=e)
+            rethrow(e)
+        end
+    end
+
+    # GPU GWAS tests
+    @testset "GPU GWAS" begin
+        start_time = time()
+        try
+            include("test_gpu_gwas.jl")
+            test_results["GPU GWAS"] = (passed=true, time=time()-start_time)
+        catch e
+            test_results["GPU GWAS"] = (passed=false, time=time()-start_time, error=e)
+            rethrow(e)
+        end
+    end
 end
 
 overall_time = time() - overall_start
