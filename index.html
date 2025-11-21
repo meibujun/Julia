@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>时空数字底座数据分析处理 | Spatio-Temporal Digital Base</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+  <header class="hero">
+    <div class="hero__content container">
+      <div>
+        <p class="eyebrow">Spatio-Temporal Digital Base</p>
+        <h1>时空数字底座数据分析处理</h1>
+        <p class="lede">
+          使用数学与计算机技术解决生态学与可持续发展问题。Upload code, datasets, and analysis pipelines designed for GitHub-first deployment.
+        </p>
+        <div class="cta-group">
+          <a class="btn primary" href="#resources">资源 / Resources</a>
+          <a class="btn ghost" href="#discussion">讨论 / Discuss</a>
+        </div>
+        <ul class="pill-list">
+          <li>生态建模 / Eco Modeling</li>
+          <li>遥感与时空序列 / Remote Sensing & Time Series</li>
+          <li>可重复科研 / Reproducible Research</li>
+        </ul>
+      </div>
+      <div class="hero__card">
+        <div class="card__header">快速部署 | Rapid Deploy</div>
+        <div class="card__body">
+          <p>GitHub Pages + Actions 模板，引导数据清洗、特征工程、模型训练与可视化的自动化流程。</p>
+          <ul>
+            <li>Notebook → Pipeline → API → Dashboard</li>
+            <li>内置 CI: lint, test, doc 构建</li>
+            <li>支持 R, Python, Julia, WebAssembly</li>
+          </ul>
+        </div>
+        <div class="card__footer">Open Science • MIT License</div>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="section" id="mission">
+      <div class="container two-col">
+        <div>
+          <p class="eyebrow">Mission | 愿景</p>
+          <h2>用数据驱动生态智慧</h2>
+          <p>
+            我们聚焦生态系统的时空演化，借助数学建模（偏微分方程、图模型、贝叶斯推断）与高性能计算（GPU、分布式计算、WebAssembly）
+            构建开放、可重复的科研与产品化工作流。面向保护区管理、碳汇监测、物种栖息地评估等应用场景。
+          </p>
+        </div>
+        <div class="callout">
+          <h3>Design Principles</h3>
+          <ul>
+            <li>Open & bilingual content / 中英文同步</li>
+            <li>Reproducible workflows with versioned data</li>
+            <li>Low-barrier onboarding via templates & docs</li>
+            <li>Secure by default: data governance & ethics</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="section muted" id="features">
+      <div class="container">
+        <p class="eyebrow">Features | 核心能力</p>
+        <h2>数学 + 计算的端到端生态分析</h2>
+        <div class="grid">
+          <article class="card feature">
+            <h3>Spatio-temporal Analytics / 时空分析</h3>
+            <p>支持 Kriging、GNN、时空 Transformer、点云与栅格并行处理，兼容 NetCDF/GeoTIFF/HDF5。</p>
+          </article>
+          <article class="card feature">
+            <h3>Numerical Modeling / 数值建模</h3>
+            <p>提供 PDE 求解、最优化、Monte Carlo 与 Bayesian 推断模块，并对接 GPU/多核加速。</p>
+          </article>
+          <article class="card feature">
+            <h3>Data Ops / 数据工程</h3>
+            <p>数据标准化、质量评估、合规模型、数据血缘追踪，Git LFS & DVC 集成。</p>
+          </article>
+          <article class="card feature">
+            <h3>Visualization / 可视化</h3>
+            <p>交互式地图、流场、等值面、谱分析图，支持 web 图层与 Notebook 内嵌。</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="resources">
+      <div class="container">
+        <p class="eyebrow">Resources | 资源发布</p>
+        <h2>代码、模板与数据</h2>
+        <div class="resource-grid">
+          <div class="card resource">
+            <h3>Starter Kits</h3>
+            <p>GitHub Actions 与 Pages 的一键部署模板，含 Python/Julia/R 的最小示例与文档结构。</p>
+            <a href="#" class="link">Download / 获取</a>
+          </div>
+          <div class="card resource">
+            <h3>Model Zoo</h3>
+            <p>遥感分类、物种分布模型、碳储量估算等基线实现，附测试数据与可复现实验脚本。</p>
+            <a href="#" class="link">Browse / 浏览</a>
+          </div>
+          <div class="card resource">
+            <h3>Data Portal</h3>
+            <p>示例数据集（GeoJSON、NetCDF、CSV）及字段说明，提供数据质量与伦理指南。</p>
+            <a href="#" class="link">Explore / 探索</a>
+          </div>
+          <div class="card resource">
+            <h3>Docs & Tutorials</h3>
+            <p>数学推导、API 参考、案例教学、部署手册，中英双语并行维护。</p>
+            <a href="#" class="link">Read / 阅读</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section muted" id="workflow">
+      <div class="container two-col">
+        <div>
+          <p class="eyebrow">Workflow | 工作流</p>
+          <h2>从数据到洞察的自动化流水线</h2>
+          <ol class="steps">
+            <li><strong>Ingest & Validate / 采集与校验：</strong> 接入卫星、传感器与调查数据，校验空间参考与元数据。</li>
+            <li><strong>Clean & Engineer / 清洗与特征：</strong> 缺失值插补、异常检测、光谱与时序特征构造。</li>
+            <li><strong>Model & Infer / 建模与推断：</strong> 物种分布、生态网络、碳循环模型，支持不确定性量化。</li>
+            <li><strong>Serve & Visualize / 服务与可视化：</strong> API、仪表盘与地图发布，生成 PDF/HTML 报告。</li>
+          </ol>
+        </div>
+        <div class="callout">
+          <h3>GitHub-First</h3>
+          <p>以 GitHub 为主站点：Issues 追踪、Projects 排期、Actions CI/CD、Pages 静态站点、Discussions 社区交流。</p>
+          <p>提供 <code>README</code>、<code>CONTRIBUTING</code>、<code>CITATION</code> 与 <code>CODE_OF_CONDUCT</code> 模板，方便学术与开源协作。</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="discussion">
+      <div class="container two-col">
+        <div>
+          <p class="eyebrow">Community | 讨论社区</p>
+          <h2>开放讨论与共创</h2>
+          <p>
+            通过 GitHub Discussions、Issue 模板与定期线上研讨，聚焦算法改进、数据共享与政策合规。所有讨论要求标注数据来源、方法假设与伦理考量。
+          </p>
+          <a class="btn primary" href="https://github.com/community" target="_blank" rel="noopener">加入讨论 / Join</a>
+        </div>
+        <div class="card panel">
+          <div class="panel__header">Moderation Guidelines</div>
+          <ul>
+            <li>Respectful, evidence-based dialogue / 尊重且基于证据</li>
+            <li>Tag datasets & models; provide reproducible links</li>
+            <li>Highlight environmental ethics & data privacy</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="container footer__content">
+      <div>
+        <p class="eyebrow">Deploy on GitHub</p>
+        <p>Fork, push, and enable GitHub Pages. Use the included CI workflow to lint, test, and publish automatically.</p>
+      </div>
+      <div class="footer__links">
+        <a href="#mission">愿景</a>
+        <a href="#features">能力</a>
+        <a href="#resources">资源</a>
+        <a href="#discussion">讨论</a>
+      </div>
+    </div>
+  </footer>
+  <script src="assets/js/main.js"></script>
+</body>
+</html>
