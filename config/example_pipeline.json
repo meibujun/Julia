@@ -1,0 +1,42 @@
+{
+  "datasets": [
+    {
+      "name": "transcriptomics",
+      "path": "data/transcriptomics.csv",
+      "delimiter": ",",
+      "feature_column": "Feature",
+      "normalization": "zscore",
+      "imputation": "mean",
+      "metadata": {
+        "missing_strings": ["NA", ""]
+      }
+    },
+    {
+      "name": "proteomics",
+      "path": "data/proteomics.csv",
+      "delimiter": ",",
+      "feature_column": "Feature",
+      "normalization": "zscore",
+      "imputation": "median"
+    }
+  ],
+  "integration": {
+    "strategy": "concatenate"
+  },
+  "analysis": {
+    "run_pca": true,
+    "pca_components": 3,
+    "clustering": "kmeans",
+    "cluster_count": 3
+  },
+  "report": {
+    "output_path": "reports/pipeline_report.json",
+    "text_output_path": "reports/pipeline_report.txt"
+  },
+  "quality_control": {
+    "min_samples": 2,
+    "min_features": 2,
+    "min_nonmissing_ratio": 0.5,
+    "min_variance": 1e-8
+  }
+}

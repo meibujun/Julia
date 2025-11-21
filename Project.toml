@@ -1,0 +1,15 @@
+name = "GenomicPro"
+uuid = "0c0bde55-41a4-47af-8c3e-91f915c1c200"
+authors = ["AI Developer <dev@example.com>"]
+version = "0.1.0"
+
+[deps]
+CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
+JSON3 = "0f8b85d8-493c-5b1a-9879-9ecda8c0e6a9"
+
+[compat]
+CSV = "0.10"
+DataFrames = "1"
+JSON3 = "1"
+julia = "1.12"
