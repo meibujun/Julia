@@ -1,0 +1,27 @@
+<header>
+<div class="blog-name">
+  {{ispage /cn/*}}
+    <a href="/cn/">时空数字底座</a>
+  {{end}}
+  {{isnotpage /cn/*}}
+    <a href="/">EcoDigitalBase</a>
+  {{end}}
+</div>
+<nav>
+  <ul>
+    {{ispage /cn/*}}
+      <li><a href="/cn/">首页</a></li>
+      <li><a href="/cn/software/">软件资源</a></li>
+      <li><a href="#comments">讨论</a></li>
+      <li><a href="/" class="lang-switch">English</a></li>
+    {{end}}
+    {{isnotpage /cn/*}}
+      <li><a href="/">Home</a></li>
+      <li><a href="/software/">Software</a></li>
+      <li><a href="#comments">Discussion</a></li>
+      <li><a href="/cn/" class="lang-switch">CN</a></li>
+    {{end}}
+  </ul>
+  <img src="/assets/hamburger.svg" id="menu-icon">
+</nav>
+</header>
