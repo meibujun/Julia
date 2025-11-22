@@ -1,0 +1,18 @@
+# Julia
+Manifest.toml
+*.jl.cov
+*.jl.mem
+*.ji
+*.log
+*.tmp
+
+# GenomicPro3 specific
+debug_log*.txt
+core_test_log*.txt
+ai_test_log*.txt
+error_msg.txt
+verify_load.jl
+
+# OS
+.DS_Store
+Thumbs.db
