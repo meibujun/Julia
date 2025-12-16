@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Knowledge Graph</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #f0f2f5;
+        }
+        #graph-container {
+            width: 100%;
+            height: 100%;
+        }
+    </style>
+    <!-- Using a simple graph library for demonstration. In a real app, D3.js or vis.js would be better. -->
+    <script src="https://unpkg.com/force-graph"></script>
+</head>
+<body>
+
+<div id="graph-container"></div>
+
+<script>
+    const graphContainer = document.getElementById('graph-container');
+    const Graph = ForceGraph()(graphContainer);
+
+    // Function called from Android
+    function updateGraph(graphData) {
+        // Simple mapping to the format ForceGraph expects
+        const nodes = graphData.nodes.map(n => ({
+            id: n.id,
+            name: n.label,
+            val: n.mastery * 10 + 1, // Size based on mastery
+            color: getNodeColor(n.mastery)
+        }));
+
+        const links = graphData.edges.map(e => ({
+            source: e.source,
+            target: e.target
+        }));
+
+        Graph.graphData({ nodes, links })
+            .nodeLabel('name')
+            .onNodeClick(node => {
+                if (window.AndroidBridge && typeof window.AndroidBridge.onNodeClicked === 'function') {
+                    window.AndroidBridge.onNodeClicked(node.id);
+                }
+            });
+    }
+
+    function getNodeColor(mastery) {
+        if (mastery >= 0.8) return 'green';
+        if (mastery >= 0.5) return 'orange';
+        return 'red';
+    }
+
+    // Notify Android that the graph is ready
+    document.addEventListener('DOMContentLoaded', function() {
+        if (window.AndroidBridge && typeof window.AndroidBridge.onGraphReady === 'function') {
+            window.AndroidBridge.onGraphReady();
+        }
+    });
+
+</script>
+
+</body>
+</html>
